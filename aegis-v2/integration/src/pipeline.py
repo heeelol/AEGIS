@@ -272,6 +272,7 @@ class Pipeline:
                 x_min=c["x_min"], x_max=c["x_max"],
                 y_min=c["y_min"], y_max=c["y_max"],
                 confidence=c.get("confidence", 0.0),
+                polygon=c.get("polygon"),
             )
             for bid, c in self._geofences.items()
         ]

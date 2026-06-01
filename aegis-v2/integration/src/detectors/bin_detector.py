@@ -104,12 +104,18 @@ class BinDetector:
         gf = geofences or self.detected_bins
         vis = frame.copy()
         for bid, coords in gf.items():
-            cv2.rectangle(
-                vis,
-                (coords["x_min"], coords["y_min"]),
-                (coords["x_max"], coords["y_max"]),
-                (0, 255, 0), 2,
-            )
+            # Draw the segmentation polygon when available; otherwise the box.
+            poly = coords.get("polygon")
+            if poly and len(poly) >= 3:
+                pts = np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
+                cv2.polylines(vis, [pts], True, (0, 255, 0), 2)
+            else:
+                cv2.rectangle(
+                    vis,
+                    (coords["x_min"], coords["y_min"]),
+                    (coords["x_max"], coords["y_max"]),
+                    (0, 255, 0), 2,
+                )
             cv2.putText(vis, f"{bid} ({coords['confidence']:.2f})",
                         (coords["x_min"], coords["y_min"] - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)

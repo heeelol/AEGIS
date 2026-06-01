@@ -34,7 +34,9 @@ class BinEvent:
 
 @dataclass
 class BinRegion:
-    """A bin region defined by bounding box."""
+    """A bin region defined by a bounding box, with an optional segmentation
+    polygon. ``polygon`` is a list of [x, y] points (image pixels) when the
+    detector produced a mask; ``None`` for box-only / manual-layout bins."""
     bin_id: str
     label: str
     x_min: float
@@ -42,6 +44,7 @@ class BinRegion:
     y_min: float
     y_max: float
     confidence: float = 0.0
+    polygon: Optional[list] = None
 
     @property
     def centroid(self) -> tuple[float, float]:
@@ -76,6 +79,7 @@ class BinAssignmentEngine:
                 x_min=c["x_min"], x_max=c["x_max"],
                 y_min=c["y_min"], y_max=c["y_max"],
                 confidence=c.get("confidence", 0.0),
+                polygon=c.get("polygon"),
             )
             for bid, c in geofences.items()
         ]

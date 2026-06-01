@@ -113,16 +113,22 @@ class OverlayUI:
 
         for idx, region in enumerate(self._bins):
             color = _BIN_COLORS[idx % len(_BIN_COLORS)]
-            x1, y1 = int(region.x_min), int(region.y_min)
-            x2, y2 = int(region.x_max), int(region.y_max)
+            is_active = region.bin_id in active_ids
+            thickness = 3 if is_active else 2
 
-            # Semi-transparent fill for active bins
-            if self._highlight and region.bin_id in active_ids:
-                cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
-
-            # Border
-            thickness = 3 if region.bin_id in active_ids else 2
-            cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
+            # Prefer the segmentation polygon when the detector supplied one;
+            # fall back to the bounding box (manual layout / box-only models).
+            pts = self._polygon_points(region)
+            if pts is not None:
+                if self._highlight and is_active:
+                    cv2.fillPoly(overlay, [pts], color)
+                cv2.polylines(img, [pts], True, color, thickness)
+            else:
+                x1, y1 = int(region.x_min), int(region.y_min)
+                x2, y2 = int(region.x_max), int(region.y_max)
+                if self._highlight and is_active:
+                    cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
+                cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
 
             # Label at centroid
             cx = int((region.x_min + region.x_max) / 2)
@@ -131,6 +137,15 @@ class OverlayUI:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         cv2.addWeighted(overlay, self._alpha, img, 1 - self._alpha, 0, img)
+
+    @staticmethod
+    def _polygon_points(region) -> np.ndarray | None:
+        """Return the region's segmentation polygon as an int32 (N,1,2) array
+        for cv2 poly drawing, or None when no usable polygon is present."""
+        poly = getattr(region, "polygon", None)
+        if not poly or len(poly) < 3:
+            return None
+        return np.asarray(poly, dtype=np.int32).reshape(-1, 1, 2)
 
     # ── Hand rendering ───────────────────────────────────────
 
