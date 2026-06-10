@@ -41,7 +41,7 @@ struct Bin {
 //
 Bin bins[NUM_BINS] = {
   // id          dout    scale        offset
-  { "bin_0_0",   13,     142.3,         0 },
+  { "bin_0_0",   13,     142.187,         0 },
   // { "bin_0_1",   19,     1.0,         0 },
 };
 
@@ -49,7 +49,7 @@ HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
 const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 182.8;  // known reference mass, grams
+const float CAL_MASS_G     = 383.1;  // known reference mass, grams
 
 // ---------- FILTER ----------
 const int N_SAMPLES = 3;    // readings averaged per bin per cycle
