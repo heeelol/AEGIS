@@ -6,6 +6,9 @@ camera:
   width: 1280
   height: 720
   fps: 30
+  warmup_frames: 30               # frames discarded before the init snapshot so
+                                  # exposure/focus settle (USB cams need this; raise
+                                  # if the Logitech still detects nothing)
 
 # --- Bin Boundary Detector (from cv-models) ------
 bin_detector:
@@ -20,7 +23,7 @@ bin_detector:
   # computed for you. Each entry is the bin count for that layer (top → bottom).
   # Leave commented (or null) to use the trained model instead.
   #   manual_layout: [4, 3]       # layer 0 → 4 bins, layer 1 → 3 bins
-  manual_layout: [4,3]
+  manual_layout: null
 
 # --- Hand Tracker (from hand-models) -------------
 hand_tracker:

@@ -83,10 +83,13 @@ function renderBins(bins, layout) {
 
     const grid = document.createElement("div");
     grid.className = "layer-grid";
-    grid.style.gridTemplateColumns = "repeat(" + Math.max(layer.num_bins, 1) + ", 1fr)";
+    // Lay the row out as a slot track; each bin spans its declared slots.
+    grid.style.gridTemplateColumns = "repeat(" + Math.max(layer.row_slots, 1) + ", 1fr)";
 
-    for (const binId of layer.bin_ids) {
-      grid.appendChild(makeBinBox(binId, byId[binId]));
+    for (const slot of layer.bins) {
+      const boxEl = makeBinBox(slot.id, byId[slot.id]);
+      boxEl.style.gridColumn = (slot.slot_start + 1) + " / span " + slot.span;
+      grid.appendChild(boxEl);
     }
 
     row.appendChild(grid);

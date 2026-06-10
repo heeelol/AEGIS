@@ -112,13 +112,42 @@ class Pipeline:
     def _open_camera(self) -> None:
         cam = self._config.get("camera", {})
         source = cam.get("source", 0)
+        # YAML may provide "0" as a string; treat digit strings as camera indices.
+        if isinstance(source, str) and source.isdigit():
+            source = int(source)
         logger.info("Opening camera: %s", source)
-        self._cap = cv2.VideoCapture(source)
+
+        # On Windows the default backend (MSMF) often fails to open USB webcams
+        # (e.g. Logitech). DirectShow is reliable for integer camera indices; fall
+        # back to the default backend if DirectShow can't open it.
+        if isinstance(source, int):
+            self._cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+            if not self._cap.isOpened():
+                logger.warning("DirectShow could not open camera %s; trying default backend...", source)
+                self._cap.release()
+                self._cap = cv2.VideoCapture(source)
+        else:
+            self._cap = cv2.VideoCapture(source)
+
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam.get("width", 1280))
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam.get("height", 720))
         self._cap.set(cv2.CAP_PROP_FPS, cam.get("fps", 30))
         if not self._cap.isOpened():
             raise RuntimeError(f"Cannot open camera: {source}")
+
+    def _grab_warm_frame(self, warmup: int = 30):
+        """Read and discard frames so exposure/focus settle, then return the last frame.
+
+        External USB webcams (e.g. Logitech via DirectShow) deliver dark/blurry
+        frames for the first ~1s. Grabbing the init snapshot cold makes the bin
+        detector see a black frame and find nothing. Returns None if no frame reads.
+        """
+        frame = None
+        for _ in range(max(1, warmup)):
+            ret, f = self._cap.read()
+            if ret and f is not None:
+                frame = f
+        return frame
 
     def _detect_bins(self) -> None:
         """Snapshot → detect bin boundaries → lock coordinates for session.
@@ -128,9 +157,9 @@ class Pipeline:
         """
         det_cfg = self._config.get("bin_detector", {})
 
-        logger.info("Taking initialization snapshot for bin detection...")
-        ret, frame = self._cap.read()
-        if not ret:
+        logger.info("Warming up camera and taking initialization snapshot...")
+        frame = self._grab_warm_frame(self._config.get("camera", {}).get("warmup_frames", 30))
+        if frame is None:
             raise RuntimeError("Failed to capture initialization snapshot")
 
         manual_layout = det_cfg.get("manual_layout")

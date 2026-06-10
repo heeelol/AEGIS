@@ -26,6 +26,7 @@ sys.path.insert(0, str(_ROOT))
 
 from integration.src.ui.dashboard import start_dashboard
 from integration.src.ui.state import PipelineState
+from integration.src.detectors.layout_mapper import map_detections_to_layout
 
 
 # ── Minimal duck-typed stand-ins for the real Hand / BinEvent ──
@@ -48,22 +49,31 @@ class FakeEvent:
 
 # ── Mock world ─────────────────────────────────────────────────
 
+# The real rig: 6 single-slot bins on top, 3 double-slot bins on the bottom.
+LAYOUT = [[1, 1, 1, 1, 1, 1], [2, 2, 2]]
+FRAME_W, FRAME_H = 1280, 720
+
+
+def _box(row, slot_start, span, row_slots, num_rows=2):
+    """Synthetic detection box centred on a slot's expected position."""
+    ex = (slot_start + span / 2.0) / row_slots
+    xc = ex * FRAME_W
+    half_w = (span / row_slots) * FRAME_W * 0.4
+    yc = (row + 0.5) / num_rows * FRAME_H
+    half_h = (FRAME_H / num_rows) * 0.3
+    return (xc - half_w, yc - half_h, xc + half_w, yc + half_h,
+            round(random.uniform(0.85, 0.98), 2))
+
+
 def build_geofences() -> dict:
-    """2x4 grid of bins covering a 1280x720 frame."""
-    cols, rows = 4, 2
-    cell_w, cell_h = 1280 // cols, 720 // rows
-    geofences = {}
-    for r in range(rows):
-        for c in range(cols):
-            bid = f"bin_{r}_{c}"
-            geofences[bid] = {
-                "x_min": c * cell_w + 20,
-                "x_max": (c + 1) * cell_w - 20,
-                "y_min": r * cell_h + 20,
-                "y_max": (r + 1) * cell_h - 20,
-                "confidence": round(random.uniform(0.85, 0.98), 2),
-            }
-    return geofences
+    """Run synthetic detections through the LayoutMapper.
+
+    Deliberately omits the bottom-middle bin (slot 2 → bin_1_1) so the
+    dashboard shows a grey 'undetected' placeholder in the right slot.
+    """
+    boxes = [_box(0, c, 1, 6) for c in range(6)]          # full top row
+    boxes += [_box(1, 0, 2, 6), _box(1, 4, 2, 6)]         # bottom: skip slot 2
+    return map_detections_to_layout(boxes, LAYOUT, FRAME_W, FRAME_H)
 
 
 # Scripted FSM sequence per pick attempt
@@ -109,8 +119,9 @@ def main() -> None:
         "bin_0_0": 3,
         "bin_0_1": 5,
         "bin_0_2": 2,
-        "bin_1_1": 4,
-        "bin_1_3": 1,
+        "bin_0_3": 4,
+        "bin_1_0": 3,
+        "bin_1_2": 2,
     })
     state.set_work_order(work_order)
 
@@ -119,8 +130,8 @@ def main() -> None:
     print("\n  AEGIS v2 mock dashboard:  http://localhost:8080\n")
     print("  Press Ctrl+C to stop.\n")
 
-    target_bins = ["bin_0_0", "bin_0_1", "bin_0_2", "bin_1_1", "bin_1_3"]
-    wrong_bins = ["bin_1_0", "bin_1_2"]
+    target_bins = ["bin_0_0", "bin_0_1", "bin_0_2", "bin_0_3", "bin_1_0", "bin_1_2"]
+    wrong_bins = ["bin_0_4", "bin_0_5"]   # detected but not in the job → red flash
     frame = 0
     t0 = time.time()
 
