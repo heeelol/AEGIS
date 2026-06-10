@@ -13,12 +13,12 @@ const POLL_INTERVAL = 1000; // ms
 
 // ── FSM display config ──────────────────────────────
 const FSM_DISPLAY = {
-  idle:           { label: "IDLE",           css: "fsm-idle",    gates: [0, 0, 0] },
-  gate_1_spatial: { label: "GATE 1: SPATIAL",css: "fsm-spatial", gates: [1, 0, 0] },
-  gate_2_intent:  { label: "GATE 2: INTENT", css: "fsm-intent",  gates: [2, 1, 0] },
-  gate_3_verify:  { label: "GATE 3: VERIFY", css: "fsm-verify",  gates: [2, 2, 1] },
-  success:        { label: "SUCCESS",         css: "fsm-success", gates: [2, 2, 2] },
-  error:          { label: "ERROR",           css: "fsm-error",   gates: [-1,-1,-1] },
+  idle: { label: "IDLE", css: "fsm-idle", gates: [0, 0, 0] },
+  gate_1_spatial: { label: "GATE 1: SPATIAL", css: "fsm-spatial", gates: [1, 0, 0] },
+  gate_2_intent: { label: "GATE 2: INTENT", css: "fsm-intent", gates: [2, 1, 0] },
+  gate_3_verify: { label: "GATE 3: VERIFY", css: "fsm-verify", gates: [2, 2, 1] },
+  success: { label: "SUCCESS", css: "fsm-success", gates: [2, 2, 2] },
+  error: { label: "ERROR", css: "fsm-error", gates: [-1, -1, -1] },
 };
 
 // ── Main poll loop ──────────────────────────────────
@@ -34,11 +34,11 @@ async function poll() {
 
     if (!binsRes.ok) throw new Error("Backend error");
 
-    const bins   = await binsRes.json();
+    const bins = await binsRes.json();
     const layout = await layoutRes.json();
-    const hands  = await handsRes.json();
-    const fsm    = await fsmRes.json();
-    const stats  = await statsRes.json();
+    const hands = await handsRes.json();
+    const fsm = await fsmRes.json();
+    const stats = await statsRes.json();
 
     renderBins(bins, layout);
     renderFSM(fsm);
@@ -115,16 +115,16 @@ function makeBinBox(binId, bin) {
     } else {
       inner += '<div class="quantity">' + bin.current + '</div>';
     }
-    if (bin.weight) {
-      inner += '<div class="bin-weight">' + Math.round(bin.weight) + 'g</div>';
-    }
+    // if (bin.weight) {
+    //   inner += '<div class="bin-weight">' + Math.round(bin.weight) + 'g</div>';
+    // }
   } else {
     inner += '<div class="quantity">' + bin.current + '</div>';
   }
 
   if (bin.is_active && bin.handedness) {
     inner += '<div class="bin-badge" style="background:#3b82f6;color:#fff;">'
-           + bin.handedness.toUpperCase() + '</div>';
+      + bin.handedness.toUpperCase() + '</div>';
   }
 
   box.innerHTML = inner;
@@ -173,17 +173,17 @@ function renderHands(hands) {
     card.className = "hand-card";
 
     const grabClass = hand.is_grabbing ? "grabbing" : "open";
-    const grabText  = hand.is_grabbing ? "GRABBING" : "OPEN";
+    const grabText = hand.is_grabbing ? "GRABBING" : "OPEN";
 
     card.innerHTML =
       '<div class="hand-label">' + hand.handedness + ' hand</div>' +
       '<div class="hand-detail">Position: (' +
-        Math.round(hand.x) + ', ' + Math.round(hand.y) + ')</div>' +
+      Math.round(hand.x) + ', ' + Math.round(hand.y) + ')</div>' +
       '<div class="hand-detail">Bin: ' +
-        (hand.assigned_bin || '—') + '</div>' +
+      (hand.assigned_bin || '—') + '</div>' +
       '<div>' +
-        '<span class="hand-grab ' + grabClass + '">' + grabText +
-        ' (' + (hand.grab_score * 100).toFixed(0) + '%)</span>' +
+      '<span class="hand-grab ' + grabClass + '">' + grabText +
+      ' (' + (hand.grab_score * 100).toFixed(0) + '%)</span>' +
       '</div>';
 
     container.appendChild(card);
