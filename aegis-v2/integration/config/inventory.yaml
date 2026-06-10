@@ -1,0 +1,18 @@
+# Inventory map — one item type per bin.
+#
+# The load cell is tared with the bins FULL at startup, so each bin's live
+# weight is the signed change from full: it goes negative as items are removed.
+# So for a bin holding an item of unit weight `unit_g`:
+#     items_taken = round(-weight / unit_g)      # clamped at >= 0
+#
+# Edit unit weights and bin assignments here; nothing about counts is needed.
+
+items:
+  # item_name: { unit_g: <grams per single item> }
+  bolt_m6:   { unit_g: 13.9 }
+  washer_m6: { unit_g: 1.1 }
+
+bins:
+  # bin_id: item_name   (bin_id matches the load-cell keys, e.g. bin_0_0)
+  bin_0_0: bolt_m6
+  #bin_0_1: washer_m6
