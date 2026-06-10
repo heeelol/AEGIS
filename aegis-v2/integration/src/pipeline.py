@@ -39,7 +39,7 @@ _DEFAULT_CONFIG = str(_ROOT / "integration" / "config" / "settings.yaml")
 
 from integration.src.detectors import BinDetector
 from integration.src.engine import BinAssignmentEngine, BinRegion, TripleGateFSM, SensorReading
-from integration.src.sensing import LoadCellReader
+from integration.src.sensing import LoadCellReader, InventoryTracker
 from integration.src.ui.overlay import OverlayUI
 from integration.src.ui.state import PipelineState
 
@@ -85,6 +85,10 @@ class Pipeline:
         self._fsm: Optional[TripleGateFSM] = None
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
+        self._inventory: Optional[InventoryTracker] = None
+        # Per-bin weight captured when a hand starts reaching into it; used to
+        # measure the weight change that confirms a pick (FSM Gate 3).
+        self._weight_baseline: dict[str, float] = {}
         self._geofences: dict = {}
 
         # Shared state for the web dashboard
@@ -234,6 +238,17 @@ class Pipeline:
         self._loadcells = LoadCellReader(lc_cfg)
         layout = self._loadcells.get_layout()
         self._state.update_loadcells(layout, self._loadcells.get_weights())
+
+        # Inventory tracker turns per-bin weights into item counts (items removed
+        # since the full-tare at startup, via config/inventory.yaml). When the
+        # load cells are live, its count drives the dashboard pick count; bins it
+        # doesn't map keep their FSM-driven count.
+        try:
+            self._inventory = InventoryTracker()
+        except Exception as exc:
+            logger.warning("Inventory tracker unavailable (%s) — counts from FSM only", exc)
+            self._inventory = None
+
         if self._loadcells.is_connected():
             logger.info("Load cells connected: %d layer(s)", layout.num_layers)
         else:
@@ -314,6 +329,17 @@ class Pipeline:
 
             hands = self._hand_tracker.detect(frame)
             events = self._assignment.assign(hands)
+            active_ids = {ev.bin_id for ev in events if ev.bin_id is not None}
+
+            # Live per-bin weights, cached by the reader's background thread so
+            # polling every frame is cheap. Feeds the FSM weight gate below and
+            # the item-count sync further down. Empty when load cells are off.
+            weights = self._loadcells.get_weights() if self._loadcells is not None else {}
+            # Forget baselines for bins no hand is reaching into, so the next
+            # reach measures its delta from the current resting weight.
+            for bid in list(self._weight_baseline):
+                if bid not in active_ids:
+                    del self._weight_baseline[bid]
 
             for ev in events:
                 if ev.bin_id is not None:
@@ -323,7 +349,7 @@ class Pipeline:
                         timestamp=time.time(),
                         hand_in_geofence=True,
                         closed_fist_detected=is_grabbing,
-                        weight_delta=0.0,
+                        weight_delta=self._weight_delta_for(ev.bin_id, weights),
                         bin_id=ev.bin_id,
                     )
                     self._fsm.update(reading)
@@ -335,7 +361,6 @@ class Pipeline:
                 bin_id=fsm_info["bin_id"],
                 elapsed=fsm_info["elapsed_time"],
             )
-            active_ids = {ev.bin_id for ev in events if ev.bin_id is not None}
             self._state.update_bins(self._geofences, active_ids)
 
             if show_overlay:
@@ -356,8 +381,9 @@ class Pipeline:
                 if self._loadcells is not None:
                     self._state.update_loadcells(
                         self._loadcells.get_layout(),
-                        self._loadcells.get_weights(),
+                        weights,
                     )
+                    self._sync_pick_counts(weights)
 
             if frame_count % 300 == 0:
                 fps = frame_count / (time.time() - t0)
@@ -365,12 +391,54 @@ class Pipeline:
                             fps, self._fsm.state.value, len(hands),
                             ", ".join(active_ids) or "none") 
 
+    # ── Load-cell helpers ────────────────────────────────────
+
+    def _weight_delta_for(self, bin_id: str, weights: dict[str, float]) -> float:
+        """Weight change for a bin since a hand started reaching into it.
+
+        The baseline is the bin's weight the first frame it became active; the
+        delta is the magnitude of change from it (positive whether items are
+        removed or replaced) so FSM Gate 3 can confirm a real pick. Returns 0.0
+        when the bin has no live weight (load cells absent/disconnected).
+        """
+        cur = weights.get(bin_id)
+        if cur is None:
+            return 0.0
+        baseline = self._weight_baseline.setdefault(bin_id, cur)
+        return abs(cur - baseline)
+
+    def _loadcell_owns_count(self, bin_id: str) -> bool:
+        """True when the live load cell is the source of truth for this bin's count."""
+        return (
+            self._inventory is not None
+            and self._loadcells is not None
+            and self._loadcells.is_connected()
+            and self._inventory.item_for(bin_id) is not None
+        )
+
+    def _sync_pick_counts(self, weights: dict[str, float]) -> None:
+        """Set each mapped bin's pick count from its load-cell item count.
+
+        The load cell is ground truth for how many items have left a bin, so we
+        set (not increment) the absolute count when it's live. Bins with no
+        inventory mapping are left alone and keep their FSM-driven count.
+        """
+        if self._inventory is None or self._loadcells is None \
+                or not self._loadcells.is_connected():
+            return
+        for bin_id, count in self._inventory.items_taken(weights).items():
+            self._state.set_pick_count(bin_id, count)
+
     # ── Callbacks ────────────────────────────────────────────
 
     def _on_gate_success(self, bin_id: str) -> None:
         """Called when all three gates pass — activate load receptor."""
         logger.info("LOAD RECEPTOR ACTIVATED for %s", bin_id)
-        self._state.record_pick(bin_id)
+        # When the load cell owns this bin's count, the periodic weight sync
+        # sets the absolute item count — incrementing here too would double
+        # count. Fall back to FSM counting only for unmapped/offline bins.
+        if not self._loadcell_owns_count(bin_id):
+            self._state.record_pick(bin_id)
         # TODO: Send signal to hardware (Modbus write / serial command)
 
     def _on_gate_error(self, bin_id: str, reason: str) -> None:
