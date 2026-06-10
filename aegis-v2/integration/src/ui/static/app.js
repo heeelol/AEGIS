@@ -100,9 +100,7 @@ function makeBinBox(binId, bin) {
   // Slot in the layout but no live data yet → render as a grey placeholder.
   if (!bin) {
     box.className = "bin grey";
-    box.innerHTML = '<div class="bin-id">' + binId + '</div>'
-                  + makeOverrideControls(binId);
-    wireOverrideControls(box, binId);
+    box.innerHTML = '<div class="bin-id">' + binId + '</div>';
     return box;
   }
 
@@ -129,52 +127,8 @@ function makeBinBox(binId, bin) {
            + bin.handedness.toUpperCase() + '</div>';
   }
 
-  inner += makeOverrideControls(bin.id);
-
   box.innerHTML = inner;
-  wireOverrideControls(box, bin.id);
   return box;
-}
-
-// ── Manual load-cell override controls ──────────────
-function makeOverrideControls(binId) {
-  return (
-    '<div class="bin-override" data-bin-id="' + binId + '">' +
-      '<button class="ov-btn ov-minus" title="Decrement pick count">−</button>' +
-      '<button class="ov-btn ov-plus" title="Increment pick count">+</button>' +
-    '</div>'
-  );
-}
-
-function wireOverrideControls(box, binId) {
-  const minus = box.querySelector(".ov-minus");
-  const plus  = box.querySelector(".ov-plus");
-  if (minus) minus.addEventListener("click", function(e) {
-    e.stopPropagation();
-    overridePick(binId, -1);
-  });
-  if (plus) plus.addEventListener("click", function(e) {
-    e.stopPropagation();
-    overridePick(binId, +1);
-  });
-}
-
-async function overridePick(binId, delta) {
-  try {
-    const res = await fetch("/api/bins/" + encodeURIComponent(binId) + "/pick", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delta: delta }),
-    });
-    if (!res.ok) {
-      console.warn("Override failed:", binId, delta, res.status);
-      return;
-    }
-    // Refresh immediately so the operator sees the change without waiting for the next poll.
-    poll();
-  } catch (err) {
-    console.error("Override error:", err);
-  }
 }
 
 // ── FSM state ───────────────────────────────────────

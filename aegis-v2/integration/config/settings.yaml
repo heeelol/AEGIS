@@ -73,7 +73,7 @@ sensing:
   # While disabled (or the port can't be opened) the dashboard layout comes
   # from CV detection only and no weights are shown.
   loadcells:
-    enabled: false
+    enabled: true 
     port: "/dev/ttyUSB0"   # ESP32 USB device (Windows: "COM3")
     baudrate: 115200
     stale_after: 5.0       # seconds without data → treated as disconnected

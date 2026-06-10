@@ -9,7 +9,7 @@
 
 items:
   # item_name: { unit_g: <grams per single item> }
-  bolt_m6:   { unit_g: 13.9 }
+  bolt_m6:   { unit_g: 63.7 }
   washer_m6: { unit_g: 1.1 }
 
 bins:

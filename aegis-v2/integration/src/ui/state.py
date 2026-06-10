@@ -134,15 +134,6 @@ class PipelineState:
             if bin_id in self._bins:
                 self._bins[bin_id].pick_count += 1
 
-    def adjust_pick_count(self, bin_id: str, delta: int) -> Optional[int]:
-        """Nudge a bin's pick count by `delta`. Clamped to ≥0. Returns new value."""
-        with self._lock:
-            b = self._bins.get(bin_id)
-            if b is None:
-                return None
-            b.pick_count = max(0, b.pick_count + int(delta))
-            return b.pick_count
-
     def set_pick_count(self, bin_id: str, count: int) -> Optional[int]:
         """Set a bin's pick count to `count`. Clamped to ≥0. Returns new value."""
         with self._lock:
