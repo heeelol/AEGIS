@@ -395,7 +395,7 @@ class Pipeline:
                 confidence=c.get("confidence", 0.0),
                 polygon=c.get("polygon"),
             )
-            for bid, c in self._geofences.items()
+            for bid, c in geofences.items()
         ]
         self._overlay = OverlayUI(ui_cfg, bins)
         logger.info("OpenCV overlay built with %d bins", len(bins))
@@ -408,6 +408,7 @@ class Pipeline:
             return
 
         port = dash_cfg.get("port", 8080)
+        open_browser = dash_cfg.get("open_browser", True)
         try:
             from integration.src.ui.dashboard import start_dashboard
             start_dashboard(self._state, port=port)

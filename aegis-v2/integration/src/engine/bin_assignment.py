@@ -63,6 +63,9 @@ class BinAssignmentEngine:
     Determines which bin each hand is in based on hand position and bin boundaries.
     """
 
+    # MCP knuckle landmarks, the proximal fallback anchor for the occlusion gate.
+    _MCP_NAMES = ("index_mcp", "middle_mcp", "ring_mcp", "pinky_mcp")
+
     def __init__(self, config: dict):
         self._method: str = config.get("method", "point_in_polygon")
         self._keypoint: str = config.get("hand_keypoint", "index_tip")
@@ -75,6 +78,14 @@ class BinAssignmentEngine:
         self._top_rows: set[int] = set()
         self._bottom_bins: list[BinRegion] = []
         self._global_occ_y: float = 0.0
+
+        # Occlusion gate (see docs/superpowers/specs/2026-06-15-occlusion-gate-design.md)
+        self._gate_enabled: bool = config.get("occlusion_gate", {}).get("enabled", True)
+        # Grid structure precomputed from the bin map by _recompute_grid_structure.
+        self._bottom_row: Optional[int] = None
+        self._top_rows: set[int] = set()
+        self._bottom_bins: list[BinRegion] = []
+        self._global_occ_y: Optional[float] = None
 
     def set_bin_map(self, bins: list[BinRegion]) -> None:
         self._bins = bins
@@ -205,6 +216,10 @@ class BinAssignmentEngine:
           - point_in_polygon: check if hand keypoint is inside bin bounds
           - nearest_centroid: assign to closest bin center
           - area_overlap: estimate overlap between hand bbox and bin bbox
+
+        ``frame_shape`` is the camera frame's ``(h, w, ...)`` and is used only by
+        the occlusion gate's in-frame check on the wrist. When omitted the gate
+        still runs but skips that check (falls back to the MCP centroid anchor).
         """
         events: list[BinEvent] = []
 
@@ -303,3 +318,122 @@ class BinAssignmentEngine:
             hand_point=point, hand_area=hand_area,
             confidence=0.0, method="area_overlap",
         )
+
+    # ── Occlusion gate ───────────────────────────────────────
+
+    @staticmethod
+    def _parse_row_col(bin_id: str) -> tuple[Optional[int], Optional[int]]:
+        """Parse ``bin_{row}_{col}`` → (row, col); (None, None) if it doesn't fit."""
+        try:
+            _, row, col = bin_id.split("_")
+            return int(row), int(col)
+        except (AttributeError, ValueError):
+            return None, None
+
+    def _recompute_grid_structure(self) -> None:
+        """Precompute the bottom-row geometry the occlusion gate needs.
+
+        Bottom row = the largest ``row`` over ``bin_{row}_{col}`` ids; top rows are
+        everything above it; ``_bottom_bins`` are the bottom-row regions sorted by
+        ``x_min`` (the "beneath the anchor" lookup); ``_global_occ_y`` is the
+        highest bottom rim — the fallback occlusion line. A single-row (or
+        unparseable) layout leaves ``_top_rows`` empty, making the gate inert.
+        """
+        rows = [r for r, _ in (self._parse_row_col(b.bin_id) for b in self._bins)
+                if r is not None]
+        if not rows:
+            self._bottom_row = None
+            self._top_rows = set()
+            self._bottom_bins = []
+            self._global_occ_y = None
+            return
+        self._bottom_row = max(rows)
+        self._top_rows = {r for r in rows if r < self._bottom_row}
+        self._bottom_bins = sorted(
+            (b for b in self._bins
+             if self._parse_row_col(b.bin_id)[0] == self._bottom_row),
+            key=lambda b: b.x_min,
+        )
+        self._global_occ_y = min((b.y_min for b in self._bottom_bins), default=None)
+
+    def _occlusion_anchor(
+        self, hand, frame_shape: Optional[tuple]
+    ) -> Optional[tuple[float, float]]:
+        """The most-proximal reliably-available landmark, as (x, y).
+
+        Wrist if finite and (when ``frame_shape`` is given) in-frame; otherwise
+        the centroid of the finite MCP knuckles. None when neither is usable.
+        """
+        wrist = hand.get_landmark("wrist")
+        if wrist is not None and math.isfinite(wrist.x) and math.isfinite(wrist.y):
+            in_frame = True
+            if frame_shape is not None:
+                h, w = frame_shape[0], frame_shape[1]
+                in_frame = (0 <= wrist.x <= w) and (0 <= wrist.y <= h)
+            if in_frame:
+                return (wrist.x, wrist.y)
+
+        xs, ys = [], []
+        for name in self._MCP_NAMES:
+            lm = hand.get_landmark(name)
+            if lm is not None and math.isfinite(lm.x) and math.isfinite(lm.y):
+                xs.append(lm.x)
+                ys.append(lm.y)
+        if xs:
+            return (sum(xs) / len(xs), sum(ys) / len(ys))
+        return None
+
+    def _bottom_bin_at(self, x: float) -> Optional[BinRegion]:
+        """The bottom-row bin whose x-extent contains ``x``, or None."""
+        for b in self._bottom_bins:
+            if b.x_min <= x <= b.x_max:
+                return b
+        return None
+
+    def _apply_occlusion_gate(
+        self, hand, event: BinEvent, frame_shape: Optional[tuple]
+    ) -> BinEvent:
+        """Reject a fingertip extrapolated under the shelf into a top bin.
+
+        Fires only when the assigned bin is top-row and the hand's proximal anchor
+        (wrist/knuckles) sits at or below the bottom-bin rim — physically the arm
+        must be reaching into the bottom bin beneath. Reassigns to that bottom bin;
+        if the anchor is below the global line but under no bottom bin (an angled
+        reach with no target), suppresses the event instead. Otherwise unchanged.
+        """
+        if not self._gate_enabled or event.bin_id is None or not self._top_rows:
+            return event
+        row, _ = self._parse_row_col(event.bin_id)
+        if row not in self._top_rows:
+            return event
+
+        anchor = self._occlusion_anchor(hand, frame_shape)
+        if anchor is None:
+            return event  # cannot judge
+        ax, ay = anchor
+
+        bottom = self._bottom_bin_at(ax)
+        if bottom is not None:
+            if ay >= bottom.y_min:
+                logger.debug("Occlusion gate: %s -> %s (anchor below rim)",
+                             event.bin_id, bottom.bin_id)
+                return BinEvent(
+                    hand_id=event.hand_id, handedness=event.handedness,
+                    bin_id=bottom.bin_id, bin_label=bottom.label,
+                    hand_point=event.hand_point, hand_area=event.hand_area,
+                    confidence=bottom.confidence, method="occlusion_gate",
+                )
+            return event  # genuine top reach (anchor above the rim)
+
+        # No bottom bin beneath the anchor. A clear bottom reach with no target
+        # gets suppressed rather than left as a false top hit.
+        if self._global_occ_y is not None and ay >= self._global_occ_y:
+            logger.debug("Occlusion gate: suppressing %s (bottom reach, no target)",
+                         event.bin_id)
+            return BinEvent(
+                hand_id=event.hand_id, handedness=event.handedness,
+                bin_id=None, bin_label=None,
+                hand_point=event.hand_point, hand_area=event.hand_area,
+                confidence=0.0, method="occlusion_gate",
+            )
+        return event

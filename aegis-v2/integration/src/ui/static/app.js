@@ -1,7 +1,7 @@
 /**
  * AEGIS v2 — Dashboard Frontend
  * ===============================
- * Polls the FastAPI backend every second and updates:
+ * Polls the FastAPI backend every 100ms and updates:
  *   - Bin grid with color-coded status
  *   - FSM gate progress
  *   - Hand tracking cards
@@ -9,7 +9,7 @@
  *   - Error overlay
  */
 
-const POLL_INTERVAL = 1000; // ms
+const POLL_INTERVAL = 100; // ms
 
 // ── FSM display config ──────────────────────────────
 const FSM_DISPLAY = {
@@ -262,5 +262,10 @@ function formatUptime(seconds) {
 // clears the instant the hand leaves, since status is recomputed every poll.
 
 // ── Start polling ───────────────────────────────────
-poll();
-setInterval(poll, POLL_INTERVAL);
+// Self-scheduling loop: wait for each poll to finish before scheduling the
+// next. At a 100ms interval a plain setInterval could stack overlapping
+// requests if one round-trip ran slow; this keeps at most one poll in flight.
+(async function pollLoop() {
+  await poll();
+  setTimeout(pollLoop, POLL_INTERVAL);
+})();

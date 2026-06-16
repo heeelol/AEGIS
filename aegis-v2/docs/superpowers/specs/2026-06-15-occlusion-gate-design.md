@@ -108,8 +108,13 @@ the (possibly rewritten) event.
    - else centroid of the finite MCP knuckles
      (`index_mcp, middle_mcp, ring_mcp, pinky_mcp`).
    - if no usable anchor → return `event` unchanged (cannot judge).
-3. Find the bottom bin `B` whose `[x_min, x_max]` contains `ax`
-   (fallback: the fingertip / `event.hand_point` x).
+3. Find the bottom bin `B` whose `[x_min, x_max]` contains `ax` (the **anchor**
+   x only — *not* the fingertip x). In this rig the top cells span the same total
+   width as the bottom cells, so a fingertip in a top bin is always x-aligned with
+   some bottom bin; using the fingertip x here would make the global-suppress
+   branch (step 5) unreachable. The anchor x is where the arm actually is, so an
+   angled reach whose anchor lands beyond/between the bottom bins correctly yields
+   "no `B`".
 4. **Per-column rim (primary):** if `B` exists and `ay >= B.y_min` → reassign:
    return a `BinEvent` for `B` with `method="occlusion_gate"`, `confidence`
    from `B`, preserving `hand_id`, `handedness`, `hand_point`, `hand_area`.
