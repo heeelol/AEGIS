@@ -9,10 +9,11 @@
 
 items:
   # item_name: { unit_g: <grams per single item> }
-  bolt_m6:   { unit_g: 63.7 }
+  bolt_m6:   { unit_g: 6.2 }
   washer_m6: { unit_g: 1.1 }
+  d-3200: { unit_g: 3.6 }
 
 bins:
   # bin_id: item_name   (bin_id matches the load-cell keys, e.g. bin_0_0)
-  bin_0_0: bolt_m6
+  bin_0_0: d-3200
   #bin_0_1: washer_m6
