@@ -1,14 +1,19 @@
 """
 Throwaway preview server for the kitting operator console.
-Count-driven model: each bin has a `current` pick count vs its `target`.
-The +/- controls adjust `current` (a load-cell stand-in); overpick is
-current > target. The full-screen red overlay is driven only by the four
-discrete alert events. Delete when done.
 
-Data contract:
-  /api/bins  -> [{id,label,in_bom,detected,current,target,hand,handedness}]
-  /api/kit   -> {name,placed,total,batch:{done,target}}
-  /api/alert -> {active,message}
+Simplified model:
+  - each bin tracks `removed` (net taken out of the bin) and `placed`
+    (how many of its items are in the kit box).
+  - a bin is DONE (green) only when placed == target AND removed == target
+    (the box has its items AND no extras are still in hand).
+  - the kit box is not shown; its sensor only guards faults (overpack etc.).
+
+Three per-bin actions drive the flow (a load-cell / vision stand-in):
+  grab   : take one from the bin            removed += 1
+  place  : move one from hand into the box  placed  += 1   (needs hand stock)
+  return : put one from hand back in bin    removed -= 1   (needs hand stock)
+
+Delete when done.
 """
 from pathlib import Path
 
@@ -20,12 +25,12 @@ STATIC = Path(__file__).parent / "integration" / "src" / "ui" / "static"
 app = FastAPI()
 
 BINS = {
-    "bin_0_0": {"label": "A1", "in_bom": True,  "detected": True,  "current": 3, "target": 5, "hand": False, "handedness": ""},
-    "bin_0_1": {"label": "A2", "in_bom": True,  "detected": True,  "current": 5, "target": 5, "hand": False, "handedness": ""},
-    "bin_0_2": {"label": "A3", "in_bom": True,  "detected": False, "current": 0, "target": 2, "hand": False, "handedness": ""},
-    "bin_1_0": {"label": "B1", "in_bom": True,  "detected": True,  "current": 0, "target": 4, "hand": False, "handedness": ""},
-    "bin_1_1": {"label": "B2", "in_bom": False, "detected": True,  "current": 0, "target": 0, "hand": False, "handedness": ""},
-    "bin_1_2": {"label": "B3", "in_bom": True,  "detected": True,  "current": 2, "target": 3, "hand": True,  "handedness": "left"},
+    "bin_0_0": {"label": "A1", "in_bom": True,  "detected": True,  "target": 5, "removed": 3, "placed": 3, "hand": False, "handedness": ""},
+    "bin_0_1": {"label": "A2", "in_bom": True,  "detected": True,  "target": 5, "removed": 5, "placed": 5, "hand": False, "handedness": ""},
+    "bin_0_2": {"label": "A3", "in_bom": True,  "detected": False, "target": 2, "removed": 0, "placed": 0, "hand": False, "handedness": ""},
+    "bin_1_0": {"label": "B1", "in_bom": True,  "detected": True,  "target": 4, "removed": 0, "placed": 0, "hand": False, "handedness": ""},
+    "bin_1_1": {"label": "B2", "in_bom": False, "detected": True,  "target": 0, "removed": 0, "placed": 0, "hand": False, "handedness": ""},
+    "bin_1_2": {"label": "B3", "in_bom": True,  "detected": True,  "target": 3, "removed": 2, "placed": 2, "hand": True,  "handedness": "left"},
 }
 
 KIT = {"name": "Starter bundle", "batch": {"done": 45, "target": 200}}
@@ -62,11 +67,13 @@ def layout():
 
 @app.get("/api/kit")
 def kit():
+    """Box sensor stays in the backend (fault guard); only batch is shown."""
     live = [b for b in BINS.values() if b["in_bom"] and b["detected"] and b["target"] > 0]
     return {
         "name": KIT["name"],
-        "placed": sum(min(b["current"], b["target"]) for b in live),
+        "placed": sum(b["placed"] for b in live),
         "total": sum(b["target"] for b in live),
+        "in_hand": sum(b["removed"] - b["placed"] for b in BINS.values() if b["detected"]),
         "batch": KIT["batch"],
     }
 
@@ -83,18 +90,35 @@ def stats():
             "mock": True}
 
 
-# ── Pick override (load-cell stand-in) ───────────────
+# ── Per-bin actions ──────────────────────────────────
 
-@app.post("/api/bins/{bin_id}/pick")
-def override(bin_id: str, body: dict):
+@app.post("/api/bins/{bin_id}/grab")
+def grab(bin_id: str):
     b = BINS.get(bin_id)
     if b is None:
         return JSONResponse({"error": "unknown bin"}, status_code=404)
-    if "delta" in body:
-        b["current"] = max(0, b["current"] + int(body["delta"]))
-    elif "count" in body:
-        b["current"] = max(0, int(body["count"]))
-    return {"bin_id": bin_id, "current": b["current"]}
+    b["removed"] += 1
+    return {"id": bin_id, "removed": b["removed"], "placed": b["placed"]}
+
+
+@app.post("/api/bins/{bin_id}/place")
+def place(bin_id: str):
+    b = BINS.get(bin_id)
+    if b is None:
+        return JSONResponse({"error": "unknown bin"}, status_code=404)
+    if b["removed"] - b["placed"] > 0:
+        b["placed"] += 1
+    return {"id": bin_id, "removed": b["removed"], "placed": b["placed"]}
+
+
+@app.post("/api/bins/{bin_id}/return")
+def return_to_bin(bin_id: str):
+    b = BINS.get(bin_id)
+    if b is None:
+        return JSONResponse({"error": "unknown bin"}, status_code=404)
+    if b["removed"] - b["placed"] > 0:
+        b["removed"] -= 1
+    return {"id": bin_id, "removed": b["removed"], "placed": b["placed"]}
 
 
 # ── Kit completion ───────────────────────────────────
@@ -104,7 +128,8 @@ def kit_complete():
     KIT["batch"]["done"] += 1
     for b in BINS.values():
         if b["in_bom"] and b["detected"]:
-            b["current"] = 0
+            b["removed"] = 0
+            b["placed"] = 0
     return {"status": "ok", "batch": KIT["batch"]}
 
 
@@ -132,12 +157,11 @@ def set_alert(body: dict):
 
 @app.post("/api/mock/reset-faults")
 def mock_reset_faults():
-    """Clear hands, clear the alert, and clamp any overpick back to target."""
+    """Clear hands, clear the alert, and return everything in hand to its bin."""
     for b in BINS.values():
         b["hand"] = False
         b["handedness"] = ""
-        if b["current"] > b["target"]:
-            b["current"] = b["target"]
+        b["removed"] = b["placed"]
     ALERT["active"] = False
     ALERT["message"] = ""
     return {"status": "ok"}

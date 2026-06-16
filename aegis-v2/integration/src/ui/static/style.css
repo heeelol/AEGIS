@@ -1,8 +1,8 @@
 /* ============================================================
    AEGIS — Kitting Operator Console
-   Count-driven kitting view. One screen, one question: what next.
-   White = act here · grey = ignore · red = fault · green = kit done.
-   Live data is monospace; chrome is tracked uppercase sans.
+   The bins are the whole story: they fill to green as items reach the box.
+   White = act here · grey = ignore · green = done · red = fault.
+   One instruction in the status bar; Complete appears when all green.
    ============================================================ */
 
 :root {
@@ -13,10 +13,10 @@
   --rule-hi:  #324440;
 
   --white:    #F4F6F5;   /* actionable tile fill */
-  --grey:     #2A3633;   /* completed / not-in-BOM tile fill */
+  --grey:     #2A3633;   /* not-in-BOM tile fill */
   --alert:    #FF3B30;   /* fault */
   --alert-dim:#2A0C0A;
-  --green:    #2BD46E;   /* kit complete */
+  --green:    #2BD46E;   /* done */
   --green-dim:#0E2C1B;
   --hand:     #46E0C0;   /* "a hand is here" — informational, not a fault */
 
@@ -89,20 +89,20 @@ h1 .mark { color: var(--hand); }
 }
 .batch-fill {
   height: 100%; width: 0%;
-  background: var(--ink-faint);     /* neutral — never competes with amber/red */
+  background: var(--ink-faint);
   transition: width 0.4s ease;
 }
 
-/* ── Workspace: bins + kit box ────────────────────── */
+/* ── Workspace: bins (full width) ─────────────────── */
 
-.workspace { display: flex; gap: 20px; padding: 20px 22px; align-items: flex-start; }
+.workspace { padding: 20px 22px; }
 
 h2 {
   font-size: 10px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 3px; color: var(--ink-faint); margin-bottom: 14px;
 }
 
-.bins-zone { flex: 1; min-width: 0; }
+.bins-zone { width: 100%; }
 
 #bins { display: flex; flex-direction: column; gap: 12px; }
 
@@ -122,7 +122,7 @@ h2 {
 
 .bin {
   position: relative;
-  min-height: 96px;
+  min-height: 104px;
   background: var(--steel);
   border: 1px solid var(--rule-hi);
   border-radius: 10px;
@@ -138,11 +138,9 @@ h2 {
 }
 
 .quantity {
-  font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1;
+  font-family: var(--mono); font-size: 32px; font-weight: 700; line-height: 1;
   margin-top: 6px; color: var(--ink);
 }
-
-.quantity .over { color: var(--alert); }   /* overpick: the current number only */
 
 .bin-missing {
   font-family: var(--mono); font-size: 13px; letter-spacing: 1.5px;
@@ -151,21 +149,16 @@ h2 {
 
 /* States ---------------------------------------------------- */
 
-/* incomplete: the only bright tiles — "act here". */
+/* incomplete / working: the only bright tiles — "act here". */
 .bin.incomplete { background: var(--white); border-color: #D5DCDA; }
 .bin.incomplete .bin-id  { color: #586C67; }
 .bin.incomplete .quantity { color: var(--ink-dark); }
-
-/* overpick: still a white work tile, red number, red edge. */
-.bin.overpick { background: var(--white); border-color: var(--alert); }
-.bin.overpick .bin-id { color: #586C67; }
-.bin.overpick .quantity { color: var(--ink-dark); }
 
 /* not-in-BOM: grey, recede. */
 .bin.not_in_bom { background: var(--grey); border-color: var(--rule-hi); }
 .bin.not_in_bom .bin-id { color: var(--ink-dim); }
 
-/* complete: green fill. */
+/* complete / done: green — box has its items AND extras returned. */
 .bin.complete {
   background: linear-gradient(var(--green-dim), rgba(43, 212, 110, 0.20));
   border-color: var(--green);
@@ -191,8 +184,7 @@ h2 {
   color: var(--hand);
   border: 1px solid var(--hand);
 }
-.bin.incomplete .hand-flag,
-.bin.overpick .hand-flag { background: rgba(20, 32, 30, 0.10); }
+.bin.incomplete .hand-flag { background: rgba(20, 32, 30, 0.10); }
 
 /* ── Wrong-bin cross overlay ──────────────────────── */
 
@@ -209,96 +201,36 @@ h2 {
 .cross::before { transform: translate(-50%, -50%) rotate(45deg); }
 .cross::after  { transform: translate(-50%, -50%) rotate(-45deg); }
 
-/* ── Manual override (load-cell stand-in) ─────────── */
+/* ── Per-bin controls: grab / place / return ──────── */
 
-.bin-override {
-  position: absolute; bottom: 7px; left: 7px; right: 7px;
-  display: flex; justify-content: space-between; gap: 6px;
+.bin-ctl {
+  position: absolute; bottom: 6px; left: 6px; right: 6px;
+  display: flex; justify-content: space-between; gap: 4px;
   opacity: 0; transition: opacity 0.15s ease;
 }
-.bin:hover .bin-override,
-.bin:focus-within .bin-override { opacity: 1; }
+.bin:hover .bin-ctl,
+.bin:focus-within .bin-ctl { opacity: 1; }
 
-.ov-btn {
+.ctl-btn {
   flex: 1; font-family: var(--mono);
   border: 1px solid var(--rule-hi);
-  background: rgba(0,0,0,0.45); color: var(--ink);
-  font-size: 15px; font-weight: 700; line-height: 1;
-  padding: 3px 0; border-radius: 5px; cursor: pointer; user-select: none;
+  background: rgba(0,0,0,0.5); color: var(--ink);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  line-height: 1; padding: 4px 0; border-radius: 5px; cursor: pointer; user-select: none;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
-.ov-btn:hover { background: rgba(0,0,0,0.7); border-color: var(--hand); }
-.ov-btn:active { transform: scale(0.95); }
-.ov-btn:focus-visible { outline: 2px solid var(--hand); outline-offset: 1px; }
-.bin.incomplete .ov-btn,
-.bin.overpick .ov-btn { background: rgba(20,32,30,0.10); color: var(--ink-dark);
-  border-color: rgba(20,32,30,0.18); }
-.bin.incomplete .ov-btn:hover,
-.bin.overpick .ov-btn:hover { background: rgba(20,32,30,0.22); }
+.ctl-btn:hover { background: rgba(0,0,0,0.78); border-color: var(--hand); }
+.ctl-btn:active { transform: scale(0.95); }
+.ctl-btn:focus-visible { outline: 2px solid var(--hand); outline-offset: 1px; }
+.bin.incomplete .ctl-btn { color: var(--ink-dark); background: rgba(20,32,30,0.10); border-color: rgba(20,32,30,0.18); }
+.bin.incomplete .ctl-btn:hover { background: rgba(20,32,30,0.22); }
+.bin.complete .ctl-btn { color: var(--ink); background: rgba(11,15,14,0.30); border-color: rgba(43,212,110,0.4); }
 
-/* ── Kit box ──────────────────────────────────────── */
-
-.kit-zone { flex: 0 0 230px; display: flex; flex-direction: column; gap: 14px; }
-
-.kitbox {
-  position: relative;
-  height: 200px;
-  background: var(--steel);
-  border: 1px solid var(--rule-hi);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.kit-fill {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  height: 0%;
-  background: linear-gradient(var(--rule-hi), var(--grey));
-  transition: height 0.4s ease, background 0.3s ease;
-}
-.kit-readout {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column; gap: 8px;
-  align-items: center; justify-content: center;
-}
-.kit-count {
-  font-family: var(--mono); font-size: 38px; font-weight: 700;
-  color: var(--ink);
-}
-.kit-done {
-  font-family: var(--mono); font-size: 13px; font-weight: 700;
-  letter-spacing: 3px; color: var(--void);
-  background: var(--green); padding: 3px 12px; border-radius: 5px;
-  display: none;
-}
-
-/* completed kit */
-.kitbox.complete { border-color: var(--green); }
-.kitbox.complete .kit-fill { height: 100% !important;
-  background: linear-gradient(var(--green-dim), rgba(43,212,110,0.35)); }
-.kitbox.complete .kit-done { display: block; }
-
-.complete-btn {
-  min-height: 48px;
-  font-family: var(--sans); font-size: 13px; font-weight: 700;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  border-radius: 9px; cursor: pointer;
-  background: var(--steel-hi); color: var(--ink-faint);
-  border: 1px solid var(--rule-hi);
-  transition: all 0.2s ease;
-}
-.complete-btn::before { content: "🔒  "; }
-.complete-btn:enabled {
-  background: var(--green); color: var(--void); border-color: var(--green);
-  cursor: pointer;
-}
-.complete-btn:enabled::before { content: ""; }
-.complete-btn:enabled:hover { filter: brightness(1.08); }
-.complete-btn:disabled { cursor: not-allowed; }
-
-/* ── Status bar ───────────────────────────────────── */
+/* ── Status bar + Complete button ─────────────────── */
 
 .statusbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 16px 22px;
+  padding: 14px 22px;
   border-top: 1px solid var(--rule);
   background: var(--steel);
   font-family: var(--mono); font-size: 15px; letter-spacing: 0.5px;
@@ -308,9 +240,26 @@ h2 {
   width: 11px; height: 11px; border-radius: 50%;
   background: var(--ink-faint); flex: 0 0 auto;
 }
+#status-msg { flex: 1; }
 .statusbar.ready  .status-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
 .statusbar.action .status-dot { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
-.statusbar.action { color: var(--alert); }
+.statusbar.action #status-msg { color: var(--alert); }
+.statusbar.ready  #status-msg { color: var(--green); }
+
+.complete-btn {
+  flex: 0 0 auto;
+  min-height: 44px; padding: 0 22px;
+  font-family: var(--sans); font-size: 13px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  border-radius: 9px; cursor: pointer;
+  background: var(--green); color: var(--void); border: 1px solid var(--green);
+  animation: popIn 0.18s ease-out;
+}
+.complete-btn:hover { filter: brightness(1.08); }
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
 
 /* ── Mock controls ────────────────────────────────── */
 
@@ -319,14 +268,14 @@ h2 {
   padding: 10px 22px; border-top: 1px dashed var(--rule-hi);
   background: rgba(0,0,0,0.25);
 }
-.mock-sep {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
-  text-transform: uppercase; color: var(--ink-faint); margin-left: 6px;
-}
 .mock-tag {
   font-family: var(--mono); font-size: 10px; font-weight: 700;
   letter-spacing: 2px; color: var(--ink-faint);
   border: 1px solid var(--rule-hi); padding: 2px 7px; border-radius: 4px;
+}
+.mock-sep {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--ink-faint); margin-left: 6px;
 }
 .mock-btn {
   font-family: var(--mono); font-size: 12px;
@@ -401,11 +350,10 @@ h2 {
 
 @media (max-width: 720px) {
   body { padding: 8px; }
-  .workspace { flex-direction: column; }
-  .kit-zone { flex-basis: auto; width: 100%; }
   header { flex-direction: column; align-items: flex-start; gap: 12px; }
   .batch { width: 100%; }
   .batch-label { text-align: left; }
+  .statusbar { flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {

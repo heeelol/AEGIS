@@ -22,30 +22,19 @@
       </div>
     </header>
 
-    <!-- Bins (left) + Kit box (right) -->
+    <!-- Bins (the whole story) -->
     <div class="workspace">
       <section class="bins-zone">
         <h2>Bins</h2>
         <div id="bins"></div>
       </section>
-
-      <aside class="kit-zone">
-        <h2>Kit Box</h2>
-        <div id="kitbox" class="kitbox">
-          <div id="kit-fill" class="kit-fill"></div>
-          <div class="kit-readout">
-            <div class="kit-count"><span id="kit-placed">0</span> / <span id="kit-total">0</span></div>
-            <div id="kit-done" class="kit-done">COMPLETED</div>
-          </div>
-        </div>
-        <button id="complete-btn" class="complete-btn" disabled>Complete kit</button>
-      </aside>
     </div>
 
-    <!-- Status bar -->
+    <!-- Status bar: one instruction + the Complete button (appears when ready) -->
     <div id="statusbar" class="statusbar">
       <span class="status-dot" id="status-dot"></span>
       <span id="status-msg">Checking bins…</span>
+      <button id="complete-btn" class="complete-btn hidden">Complete kit</button>
     </div>
 
     <!-- Mock-only controls (revealed only when the backend reports mock mode) -->

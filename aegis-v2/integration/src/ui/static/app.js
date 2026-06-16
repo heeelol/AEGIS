@@ -1,30 +1,31 @@
 /**
  * AEGIS — Kitting Operator Frontend
  * ==================================
- * Count-driven kitting view:
- *   - Bin tiles (missing / not-in-BOM / incomplete / complete / overpick)
- *   - Hand-in-bin indicator + wrong-bin cross overlay
- *   - Kit box (placed / total, COMPLETED state)
- *   - Status bar (the single next-action instruction)
- *   - Full-screen corrective overlay (driven only by the 4 backend alert events)
+ * The bins are the whole story. A bin shows placed/target and turns green ONLY
+ * when it's truly finished — the box has its items AND no extras are still held
+ * (placed == target AND removed == target). The picking/returning mechanics are
+ * never shown on the tile; the one instruction lives in the status bar.
  *
  * Data contract:
- *   /api/bins  -> [{id,label,in_bom,detected,current,target,hand,handedness}]
- *   /api/kit   -> {placed,total,batch:{done,target}}
+ *   /api/bins  -> [{id,label,in_bom,detected,target,removed,placed,hand,handedness}]
+ *   /api/kit   -> {batch:{done,target}}   (box sensor stays in backend)
  *   /api/alert -> {active,message}
  *   /api/layout-> {layers:[{layer,row_slots,bins:[{id,slot_start,span}]}]}
  */
 
 const POLL_INTERVAL = 1000; // ms
 
-// ── Bin status derivation ───────────────────────────
+// ── Per-bin derivation ──────────────────────────────
 function binStatus(b) {
   if (!b.detected) return "missing";
   if (!b.in_bom || b.target <= 0) return "not_in_bom";
-  if (b.current > b.target) return "overpick";
-  if (b.current >= b.target) return "complete";
+  // Done only when the box has its items AND nothing extra is still in hand.
+  if (b.placed >= b.target && b.removed <= b.target) return "complete";
   return "incomplete";
 }
+function toPlace(b)  { return Math.max(0, b.target - b.placed); }
+function needsReturn(b) { return b.placed >= b.target && b.removed > b.target; }
+function returnAmt(b) { return Math.max(0, b.removed - b.target); }
 function isWrongBin(b, status) {
   return b.hand && (status === "not_in_bom" || status === "complete");
 }
@@ -48,7 +49,6 @@ async function poll() {
     const stats  = await statsRes.json();
 
     renderBins(bins, layout);
-    renderKit(kit, bins);
     renderStatus(bins, alert);
     renderBatch(kit);
     setupMock(stats);
@@ -117,8 +117,9 @@ function makeBinTile(binId, b) {
   } else if (status === "not_in_bom") {
     inner += '<div class="bin-id">' + label + '</div>';
   } else {
+    // placed in box / target — the only number. No picked/return/in-hand clutter.
     inner += '<div class="bin-id">' + label + '</div>';
-    inner += quantityMarkup(b, status);
+    inner += '<div class="quantity">' + Math.min(b.placed, b.target) + '/' + b.target + '</div>';
   }
 
   if (b.hand) {
@@ -128,118 +129,98 @@ function makeBinTile(binId, b) {
   if (wrong) inner += '<div class="cross"></div>';
 
   if (status !== "missing" && status !== "not_in_bom") {
-    inner += makeOverrideControls(b.id);
+    inner += makeBinControls(b.id);
   }
 
   box.innerHTML = inner;
-  wireOverrideControls(box, b.id);
+  wireBinControls(box, b.id);
   return box;
 }
 
-function quantityMarkup(b, status) {
-  const cur = status === "overpick"
-    ? '<span class="over">' + b.current + '</span>'
-    : String(b.current);
-  return '<div class="quantity">' + cur + '/' + b.target + '</div>';
-}
-
-// ── Manual override controls (load-cell stand-in) ───
-function makeOverrideControls(binId) {
-  return '<div class="bin-override" data-bin-id="' + binId + '">' +
-    '<button class="ov-btn ov-minus" title="Decrement">−</button>' +
-    '<button class="ov-btn ov-plus" title="Increment">+</button>' +
+// ── Per-bin controls: grab / place / return ─────────
+function makeBinControls(binId) {
+  return '<div class="bin-ctl" data-bin-id="' + binId + '">' +
+    '<button class="ctl-btn ctl-grab"   title="Take one from bin">grab</button>' +
+    '<button class="ctl-btn ctl-place"  title="Place one in kit box">place</button>' +
+    '<button class="ctl-btn ctl-return" title="Return one to bin">return</button>' +
     '</div>';
 }
 
-function wireOverrideControls(box, binId) {
-  const minus = box.querySelector(".ov-minus");
-  const plus  = box.querySelector(".ov-plus");
-  if (minus) minus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, -1); });
-  if (plus)  plus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, +1); });
+function wireBinControls(box, binId) {
+  const map = { ".ctl-grab": "grab", ".ctl-place": "place", ".ctl-return": "return" };
+  for (const [sel, action] of Object.entries(map)) {
+    const el = box.querySelector(sel);
+    if (el) el.addEventListener("click", e => { e.stopPropagation(); binAction(binId, action); });
+  }
 }
 
-async function overridePick(binId, delta) {
+async function binAction(binId, action) {
   try {
-    const res = await fetch("/api/bins/" + encodeURIComponent(binId) + "/pick", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delta }),
-    });
+    const res = await fetch("/api/bins/" + encodeURIComponent(binId) + "/" + action, { method: "POST" });
     if (res.ok) poll();
-  } catch (err) { console.error("Override error:", err); }
-}
-
-// ── Kit box ─────────────────────────────────────────
-function renderKit(kit, bins) {
-  const placed = kit.placed || 0;
-  const total  = kit.total || 0;
-  const pct = total > 0 ? Math.min(100, (placed / total) * 100) : 0;
-
-  document.getElementById("kit-placed").textContent = placed;
-  document.getElementById("kit-total").textContent = total;
-  document.getElementById("kit-fill").style.height = pct + "%";
-
-  const inBom = bins.filter(b => b.in_bom && b.detected && b.target > 0);
-  const allComplete = inBom.length > 0 && inBom.every(b => b.current >= b.target);
-  const noFaults = !bins.some(b => {
-    const s = binStatus(b);
-    return s === "overpick" || isWrongBin(b, s);
-  });
-  const done = placed >= total && total > 0 && allComplete;
-
-  document.getElementById("kitbox").classList.toggle("complete", done);
-  document.getElementById("complete-btn").disabled = !(allComplete && noFaults);
+  } catch (err) { console.error("Bin action error:", err); }
 }
 
 // ── Batch progress ──────────────────────────────────
 function renderBatch(kit) {
-  const batch = kit.batch || { done: 0, target: 0 };
+  const batch = (kit && kit.batch) || { done: 0, target: 0 };
   document.getElementById("batch-done").textContent = batch.done;
   document.getElementById("batch-target").textContent = batch.target;
   const pct = batch.target > 0 ? (batch.done / batch.target) * 100 : 0;
   document.getElementById("batch-fill").style.width = pct + "%";
 }
 
-// ── Status bar + corrective overlay ─────────────────
+// ── Status bar + Complete button + overlay ──────────
 function renderStatus(bins, alert) {
   const bar = document.getElementById("statusbar");
   const msgEl = document.getElementById("status-msg");
   const overlay = document.getElementById("alert-overlay");
   const overlayMsg = document.getElementById("alert-msg");
+  const completeBtn = document.getElementById("complete-btn");
 
   const wrong = [];
-  const over = [];
-  let remaining = null;
+  const places = [];   // bins still needing items in the box
+  const returns = [];  // bins that finished placing but hold extras
+  const inBom = [];
 
   for (const b of bins) {
     const s = binStatus(b);
     const label = b.label || b.id;
+    if (s === "missing" || s === "not_in_bom") continue;
+    inBom.push(b);
     if (isWrongBin(b, s)) wrong.push(label);
-    if (s === "overpick") over.push({ label, x: b.current - b.target });
-    if (s === "incomplete") {
-      const left = b.target - b.current;
-      if (remaining === null || left > remaining.left) remaining = { label, left };
-    }
+    if (s === "incomplete" && toPlace(b) > 0) places.push({ label, n: toPlace(b) });
+    if (needsReturn(b)) returns.push({ label, n: returnAmt(b) });
   }
 
-  // The full-screen overlay is driven ONLY by a backend alert (the four events).
+  const allDone = inBom.length > 0 && inBom.every(b => binStatus(b) === "complete");
+
+  // One instruction. Placing first (productive); returns surface once placing is done.
   let message, mode;
   if (alert && alert.active) {
     message = alert.message; mode = "action";
   } else if (wrong.length) {
     message = "REMOVE HAND FROM BIN " + wrong[0]; mode = "action";
-  } else if (over.length) {
-    const o = over[0];
-    message = "RETURN " + o.x + " ITEM" + (o.x === 1 ? "" : "S") + " TO BIN " + o.label; mode = "action";
-  } else if (remaining) {
-    message = "PICK " + remaining.left + " FROM BIN " + remaining.label; mode = "";
+  } else if (places.length) {
+    const p = places.sort((a, b) => b.n - a.n)[0];
+    message = "PLACE " + p.n + " FROM BIN " + p.label; mode = "";
+  } else if (returns.length) {
+    const r = returns[0];
+    message = "RETURN " + r.n + " ITEM" + (r.n === 1 ? "" : "S") + " TO BIN " + r.label; mode = "action";
+  } else if (allDone) {
+    message = "ALL BINS COMPLETE — READY TO CLOSE"; mode = "ready";
   } else {
-    message = "KIT COMPLETE — ready to close"; mode = "ready";
+    message = "Checking bins…"; mode = "";
   }
 
   msgEl.textContent = message;
   bar.className = "statusbar" + (mode ? " " + mode : "");
 
+  // Complete button appears only when every bin is green and there are no faults.
+  const ready = allDone && !wrong.length && !returns.length && !(alert && alert.active);
+  completeBtn.classList.toggle("hidden", !ready);
+
+  // Full-screen overlay only for the backend alert events.
   if (alert && alert.active) {
     overlayMsg.textContent = alert.message;
     document.getElementById("alert-hint").classList.toggle("hidden", !_mockMode);
@@ -253,7 +234,7 @@ function renderStatus(bins, alert) {
 function initCompleteFlow() {
   const btn = document.getElementById("complete-btn");
   const modal = document.getElementById("confirm-modal");
-  btn.addEventListener("click", () => { if (!btn.disabled) modal.classList.remove("hidden"); });
+  btn.addEventListener("click", () => { if (!btn.classList.contains("hidden")) modal.classList.remove("hidden"); });
   document.getElementById("confirm-cancel").addEventListener("click",
     () => modal.classList.add("hidden"));
   document.getElementById("confirm-proceed").addEventListener("click", async () => {
