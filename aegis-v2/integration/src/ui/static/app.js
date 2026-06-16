@@ -1,74 +1,75 @@
 /**
- * AEGIS v2 — Dashboard Frontend
- * ===============================
- * Polls the FastAPI backend every second and updates:
- *   - Bin grid with color-coded status
- *   - FSM gate progress
- *   - Hand tracking cards
- *   - System stats
- *   - Error overlay
+ * AEGIS — Kitting Operator Frontend
+ * ==================================
+ * Count-driven kitting view:
+ *   - Bin tiles (missing / not-in-BOM / incomplete / complete / overpick)
+ *   - Hand-in-bin indicator + wrong-bin cross overlay
+ *   - Kit box (placed / total, COMPLETED state)
+ *   - Status bar (the single next-action instruction)
+ *   - Full-screen corrective overlay (driven only by the 4 backend alert events)
+ *
+ * Data contract:
+ *   /api/bins  -> [{id,label,in_bom,detected,current,target,hand,handedness}]
+ *   /api/kit   -> {placed,total,batch:{done,target}}
+ *   /api/alert -> {active,message}
+ *   /api/layout-> {layers:[{layer,row_slots,bins:[{id,slot_start,span}]}]}
  */
 
 const POLL_INTERVAL = 1000; // ms
 
-// ── FSM display config ──────────────────────────────
-const FSM_DISPLAY = {
-  idle:           { label: "IDLE",           css: "fsm-idle",    gates: [0, 0, 0] },
-  gate_1_spatial: { label: "GATE 1: SPATIAL",css: "fsm-spatial", gates: [1, 0, 0] },
-  gate_2_intent:  { label: "GATE 2: INTENT", css: "fsm-intent",  gates: [2, 1, 0] },
-  gate_3_verify:  { label: "GATE 3: VERIFY", css: "fsm-verify",  gates: [2, 2, 1] },
-  success:        { label: "SUCCESS",         css: "fsm-success", gates: [2, 2, 2] },
-  error:          { label: "ERROR",           css: "fsm-error",   gates: [-1,-1,-1] },
-};
+// ── Bin status derivation ───────────────────────────
+function binStatus(b) {
+  if (!b.detected) return "missing";
+  if (!b.in_bom || b.target <= 0) return "not_in_bom";
+  if (b.current > b.target) return "overpick";
+  if (b.current >= b.target) return "complete";
+  return "incomplete";
+}
+function isWrongBin(b, status) {
+  return b.hand && (status === "not_in_bom" || status === "complete");
+}
 
 // ── Main poll loop ──────────────────────────────────
 async function poll() {
   try {
-    const [binsRes, layoutRes, handsRes, fsmRes, statsRes] = await Promise.all([
+    const [binsRes, layoutRes, kitRes, alertRes, statsRes] = await Promise.all([
       fetch("/api/bins"),
       fetch("/api/layout"),
-      fetch("/api/hands"),
-      fetch("/api/fsm"),
+      fetch("/api/kit"),
+      fetch("/api/alert"),
       fetch("/api/stats"),
     ]);
-
     if (!binsRes.ok) throw new Error("Backend error");
 
     const bins   = await binsRes.json();
     const layout = await layoutRes.json();
-    const hands  = await handsRes.json();
-    const fsm    = await fsmRes.json();
+    const kit    = await kitRes.json();
+    const alert  = await alertRes.json();
     const stats  = await statsRes.json();
 
     renderBins(bins, layout);
-    renderFSM(fsm);
-    renderHands(hands);
-    renderStats(stats);
-
-    document.getElementById("last-updated").textContent =
-      "Updated: " + new Date().toLocaleTimeString();
-    document.getElementById("fps-display").textContent =
-      (stats.fps || 0).toFixed(0) + " FPS";
-
+    renderKit(kit, bins);
+    renderStatus(bins, alert);
+    renderBatch(kit);
+    setupMock(stats);
   } catch (err) {
     console.error("Poll error:", err);
-    document.getElementById("last-updated").textContent = "Connection lost";
+    const msg = document.getElementById("status-msg");
+    if (msg) msg.textContent = "Connection lost";
   }
 }
 
-// ── Bin grid (grouped by layer) ─────────────────────
+// ── Bins ────────────────────────────────────────────
 function renderBins(bins, layout) {
   const container = document.getElementById("bins");
   container.innerHTML = "";
 
-  // Index live bin data by id for quick lookup per slot.
   const byId = {};
-  for (const bin of bins) byId[bin.id] = bin;
+  for (const b of bins) byId[b.id] = b;
 
   const layers = (layout && layout.layers) || [];
-
   if (layers.length === 0) {
-    container.innerHTML = '<div class="no-hands">No bins detected yet</div>';
+    container.innerHTML = '<div class="bin-missing">No bins detected yet</div>';
     return;
   }
 
@@ -83,83 +84,78 @@ function renderBins(bins, layout) {
 
     const grid = document.createElement("div");
     grid.className = "layer-grid";
-    // Lay the row out as a slot track; each bin spans its declared slots.
     grid.style.gridTemplateColumns = "repeat(" + Math.max(layer.row_slots, 1) + ", 1fr)";
 
     for (const slot of layer.bins) {
-      const boxEl = makeBinBox(slot.id, byId[slot.id]);
-      boxEl.style.gridColumn = (slot.slot_start + 1) + " / span " + slot.span;
-      grid.appendChild(boxEl);
+      const tile = makeBinTile(slot.id, byId[slot.id]);
+      tile.style.gridColumn = (slot.slot_start + 1) + " / span " + slot.span;
+      grid.appendChild(tile);
     }
-
     row.appendChild(grid);
     container.appendChild(row);
   }
 }
 
-function makeBinBox(binId, bin) {
+function makeBinTile(binId, b) {
   const box = document.createElement("div");
 
-  // Slot in the layout but no live data yet → render as a grey placeholder.
-  if (!bin) {
-    box.className = "bin grey";
-    box.innerHTML = '<div class="bin-id">' + binId + '</div>'
-                  + makeOverrideControls(binId);
-    wireOverrideControls(box, binId);
+  if (!b) {
+    box.className = "bin missing";
+    box.innerHTML = '<div class="bin-missing">MISSING BIN</div>';
     return box;
   }
 
-  const status = String(bin.status).trim().toLowerCase();
-  box.className = "bin " + status;
+  const status = binStatus(b);
+  const wrong = isWrongBin(b, status);
+  box.className = "bin " + status + (wrong ? " wrong" : "");
 
-  let inner = '<div class="bin-id">' + bin.id + '</div>';
+  const label = b.label || b.id;
+  let inner = "";
 
-  if (status !== "grey") {
-    if (bin.total > 0) {
-      inner += '<div class="quantity">' + bin.current + '/' + bin.total + '</div>';
-    } else {
-      inner += '<div class="quantity">' + bin.current + '</div>';
-    }
-    if (bin.weight) {
-      inner += '<div class="bin-weight">' + Math.round(bin.weight) + 'g</div>';
-    }
+  if (status === "missing") {
+    inner += '<div class="bin-missing">MISSING BIN</div>';
+  } else if (status === "not_in_bom") {
+    inner += '<div class="bin-id">' + label + '</div>';
   } else {
-    inner += '<div class="quantity">' + bin.current + '</div>';
+    inner += '<div class="bin-id">' + label + '</div>';
+    inner += quantityMarkup(b, status);
   }
 
-  if (bin.is_active && bin.handedness) {
-    inner += '<div class="bin-badge" style="background:#3b82f6;color:#fff;">'
-           + bin.handedness.toUpperCase() + '</div>';
+  if (b.hand) {
+    const hd = b.handedness ? b.handedness[0].toUpperCase() : "";
+    inner += '<div class="hand-flag">✋ ' + hd + '</div>';
   }
+  if (wrong) inner += '<div class="cross"></div>';
 
-  inner += makeOverrideControls(bin.id);
+  if (status !== "missing" && status !== "not_in_bom") {
+    inner += makeOverrideControls(b.id);
+  }
 
   box.innerHTML = inner;
-  wireOverrideControls(box, bin.id);
+  wireOverrideControls(box, b.id);
   return box;
 }
 
-// ── Manual load-cell override controls ──────────────
+function quantityMarkup(b, status) {
+  const cur = status === "overpick"
+    ? '<span class="over">' + b.current + '</span>'
+    : String(b.current);
+  return '<div class="quantity">' + cur + '/' + b.target + '</div>';
+}
+
+// ── Manual override controls (load-cell stand-in) ───
 function makeOverrideControls(binId) {
-  return (
-    '<div class="bin-override" data-bin-id="' + binId + '">' +
-      '<button class="ov-btn ov-minus" title="Decrement pick count">−</button>' +
-      '<button class="ov-btn ov-plus" title="Increment pick count">+</button>' +
-    '</div>'
-  );
+  return '<div class="bin-override" data-bin-id="' + binId + '">' +
+    '<button class="ov-btn ov-minus" title="Decrement">−</button>' +
+    '<button class="ov-btn ov-plus" title="Increment">+</button>' +
+    '</div>';
 }
 
 function wireOverrideControls(box, binId) {
   const minus = box.querySelector(".ov-minus");
   const plus  = box.querySelector(".ov-plus");
-  if (minus) minus.addEventListener("click", function(e) {
-    e.stopPropagation();
-    overridePick(binId, -1);
-  });
-  if (plus) plus.addEventListener("click", function(e) {
-    e.stopPropagation();
-    overridePick(binId, +1);
-  });
+  if (minus) minus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, -1); });
+  if (plus)  plus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, +1); });
 }
 
 async function overridePick(binId, delta) {
@@ -167,100 +163,150 @@ async function overridePick(binId, delta) {
     const res = await fetch("/api/bins/" + encodeURIComponent(binId) + "/pick", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delta: delta }),
+      body: JSON.stringify({ delta }),
     });
-    if (!res.ok) {
-      console.warn("Override failed:", binId, delta, res.status);
-      return;
+    if (res.ok) poll();
+  } catch (err) { console.error("Override error:", err); }
+}
+
+// ── Kit box ─────────────────────────────────────────
+function renderKit(kit, bins) {
+  const placed = kit.placed || 0;
+  const total  = kit.total || 0;
+  const pct = total > 0 ? Math.min(100, (placed / total) * 100) : 0;
+
+  document.getElementById("kit-placed").textContent = placed;
+  document.getElementById("kit-total").textContent = total;
+  document.getElementById("kit-fill").style.height = pct + "%";
+
+  const inBom = bins.filter(b => b.in_bom && b.detected && b.target > 0);
+  const allComplete = inBom.length > 0 && inBom.every(b => b.current >= b.target);
+  const noFaults = !bins.some(b => {
+    const s = binStatus(b);
+    return s === "overpick" || isWrongBin(b, s);
+  });
+  const done = placed >= total && total > 0 && allComplete;
+
+  document.getElementById("kitbox").classList.toggle("complete", done);
+  document.getElementById("complete-btn").disabled = !(allComplete && noFaults);
+}
+
+// ── Batch progress ──────────────────────────────────
+function renderBatch(kit) {
+  const batch = kit.batch || { done: 0, target: 0 };
+  document.getElementById("batch-done").textContent = batch.done;
+  document.getElementById("batch-target").textContent = batch.target;
+  const pct = batch.target > 0 ? (batch.done / batch.target) * 100 : 0;
+  document.getElementById("batch-fill").style.width = pct + "%";
+}
+
+// ── Status bar + corrective overlay ─────────────────
+function renderStatus(bins, alert) {
+  const bar = document.getElementById("statusbar");
+  const msgEl = document.getElementById("status-msg");
+  const overlay = document.getElementById("alert-overlay");
+  const overlayMsg = document.getElementById("alert-msg");
+
+  const wrong = [];
+  const over = [];
+  let remaining = null;
+
+  for (const b of bins) {
+    const s = binStatus(b);
+    const label = b.label || b.id;
+    if (isWrongBin(b, s)) wrong.push(label);
+    if (s === "overpick") over.push({ label, x: b.current - b.target });
+    if (s === "incomplete") {
+      const left = b.target - b.current;
+      if (remaining === null || left > remaining.left) remaining = { label, left };
     }
-    // Refresh immediately so the operator sees the change without waiting for the next poll.
+  }
+
+  // The full-screen overlay is driven ONLY by a backend alert (the four events).
+  let message, mode;
+  if (alert && alert.active) {
+    message = alert.message; mode = "action";
+  } else if (wrong.length) {
+    message = "REMOVE HAND FROM BIN " + wrong[0]; mode = "action";
+  } else if (over.length) {
+    const o = over[0];
+    message = "RETURN " + o.x + " ITEM" + (o.x === 1 ? "" : "S") + " TO BIN " + o.label; mode = "action";
+  } else if (remaining) {
+    message = "PICK " + remaining.left + " FROM BIN " + remaining.label; mode = "";
+  } else {
+    message = "KIT COMPLETE — ready to close"; mode = "ready";
+  }
+
+  msgEl.textContent = message;
+  bar.className = "statusbar" + (mode ? " " + mode : "");
+
+  if (alert && alert.active) {
+    overlayMsg.textContent = alert.message;
+    document.getElementById("alert-hint").classList.toggle("hidden", !_mockMode);
+    overlay.classList.remove("hidden");
+  } else {
+    overlay.classList.add("hidden");
+  }
+}
+
+// ── Confirm-kit flow (wired once) ───────────────────
+function initCompleteFlow() {
+  const btn = document.getElementById("complete-btn");
+  const modal = document.getElementById("confirm-modal");
+  btn.addEventListener("click", () => { if (!btn.disabled) modal.classList.remove("hidden"); });
+  document.getElementById("confirm-cancel").addEventListener("click",
+    () => modal.classList.add("hidden"));
+  document.getElementById("confirm-proceed").addEventListener("click", async () => {
+    try { await fetch("/api/kit/complete", { method: "POST" }); }
+    catch (err) { console.error("Complete kit error:", err); }
+    modal.classList.add("hidden");
     poll();
-  } catch (err) {
-    console.error("Override error:", err);
-  }
+  });
 }
 
-// ── FSM state ───────────────────────────────────────
-function renderFSM(fsm) {
-  const display = FSM_DISPLAY[fsm.state] || FSM_DISPLAY.idle;
-  const label = document.getElementById("fsm-label");
-  const binEl = document.getElementById("fsm-bin");
-  const elapsedEl = document.getElementById("fsm-elapsed");
+// Esc: close the confirm modal if open; otherwise clear faults (mock only).
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const modal = document.getElementById("confirm-modal");
+  if (!modal.classList.contains("hidden")) { modal.classList.add("hidden"); return; }
+  if (_mockMode) fetch("/api/mock/reset-faults", { method: "POST" }).then(poll);
+});
 
-  // Remove all fsm-* classes, add the current one
-  label.className = "";
-  label.classList.add(display.css);
-  label.textContent = display.label;
+// ── Mock controls (only shown when backend reports mock mode) ──
+let _mockWired = false;
+let _mockMode = false;
 
-  binEl.textContent = fsm.bin_id ? ("Bin: " + fsm.bin_id) : "";
-  elapsedEl.textContent = fsm.elapsed > 0 ? (fsm.elapsed.toFixed(1) + "s") : "";
+function setupMock(stats) {
+  _mockMode = !!(stats && stats.mock);
+  const panel = document.getElementById("mock-controls");
+  if (!_mockMode) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+  if (_mockWired) return;
+  _mockWired = true;
 
-  // Gate dots
-  const dots = ["gate-1", "gate-2", "gate-3"];
-  for (let i = 0; i < 3; i++) {
-    const dot = document.getElementById(dots[i]);
-    dot.className = "gate-dot";
-    const g = display.gates[i];
-    if (g === 2) dot.classList.add("passed");
-    else if (g === 1) dot.classList.add("current");
-    else if (g === -1) dot.classList.add("failed");
-  }
+  panel.querySelectorAll(".mock-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (btn.dataset.clear) {
+        await fetch("/api/mock/reset-faults", { method: "POST" });
+      } else if (btn.dataset.scenario) {
+        await fetch("/api/mock/alert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenario: btn.dataset.scenario }),
+        });
+      } else if (btn.dataset.hand) {
+        await fetch("/api/mock/hand", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bin: btn.dataset.hand, on: true, handedness: "right" }),
+        });
+      }
+      poll();
+    });
+  });
 }
 
-// ── Hand cards ──────────────────────────────────────
-function renderHands(hands) {
-  const container = document.getElementById("hands");
-  container.innerHTML = "";
-
-  if (hands.length === 0) {
-    container.innerHTML = '<div class="no-hands">No hands detected</div>';
-    return;
-  }
-
-  for (const hand of hands) {
-    const card = document.createElement("div");
-    card.className = "hand-card";
-
-    const grabClass = hand.is_grabbing ? "grabbing" : "open";
-    const grabText  = hand.is_grabbing ? "GRABBING" : "OPEN";
-
-    card.innerHTML =
-      '<div class="hand-label">' + hand.handedness + ' hand</div>' +
-      '<div class="hand-detail">Position: (' +
-        Math.round(hand.x) + ', ' + Math.round(hand.y) + ')</div>' +
-      '<div class="hand-detail">Bin: ' +
-        (hand.assigned_bin || '—') + '</div>' +
-      '<div>' +
-        '<span class="hand-grab ' + grabClass + '">' + grabText +
-        ' (' + (hand.grab_score * 100).toFixed(0) + '%)</span>' +
-      '</div>';
-
-    container.appendChild(card);
-  }
-}
-
-// ── Stats ───────────────────────────────────────────
-function renderStats(stats) {
-  document.getElementById("stat-frames").textContent =
-    (stats.frame_count || 0).toLocaleString();
-  document.getElementById("stat-uptime").textContent =
-    formatUptime(stats.uptime_seconds || 0);
-  document.getElementById("stat-bins").textContent = stats.num_bins || 0;
-  document.getElementById("stat-hands").textContent = stats.num_hands || 0;
-}
-
-function formatUptime(seconds) {
-  if (seconds < 60) return Math.floor(seconds) + "s";
-  if (seconds < 3600) return Math.floor(seconds / 60) + "m " + (Math.floor(seconds) % 60) + "s";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return h + "h " + m + "m";
-}
-
-// A hand in a not-in-use bin (status "wrong_bin") lights up that bin directly
-// via the .bin.wrong_bin CSS glow — no full-screen overlay. The illumination
-// clears the instant the hand leaves, since status is recomputed every poll.
-
-// ── Start polling ───────────────────────────────────
+// ── Start ───────────────────────────────────────────
+initCompleteFlow();
 poll();
 setInterval(poll, POLL_INTERVAL);
