@@ -6,16 +6,18 @@ camera:
   width: 1280
   height: 720
   fps: 30
-  warmup_frames: 30               # frames discarded before the init snapshot so
-                                  # exposure/focus settle (USB cams need this; raise
-                                  # if the Logitech still detects nothing)
-  rotate_180: true                # rotate every frame 180° to match the rig mount
+  warmup_frames: 30               # frames discarded before a snapshot so exposure/
+                                  # focus settle (USB cams need this; raise if the
+                                  # Logitech still detects nothing)
+  rotate_180: true                # rotate every frame 180° to match the rig mounting
+                                  # (set false if the camera is mounted right-side up)
 
-# --- Bin Boundary Detector (from cv-models) ------
+# --- Bin Boundary Detector (native OBB) ----------
+# Two-snapshot grid flow (see docs/superpowers/specs/2026-06-15-...):
+#   key 1 = workstation grid calibration (all 9 bins in view)
+#   key 2 = kit initialisation (occupancy: which bins are present)
 bin_detector:
-  # Native OBB (oriented bounding box) bin model. Relative paths resolve against
-  # the aegis-v2 root, so the pipeline can launch from any working directory.
-  model_path: "./cv-models/models/weights/project_9_yolov8_obb_1.pt"
+  model_path: "./cv-models/models/weights/best.pt"   # Trained YOLOv8-seg weights
   confidence_threshold: 0.5
   iou_threshold: 0.45
   device: "cpu"                   # "cpu" or "cuda:0"
@@ -33,23 +35,15 @@ hand_tracker:
   backend: "mediapipe"            # "mediapipe" | "yolo-hand" | your custom backend
   confidence_threshold: 0.5
   max_hands: 2
-  grab_threshold_ratio: 1.15
-  grab_confirm_frames: 3
-  release_confirm_frames: 2
 
 # --- Bin Assignment Engine -----------------------
+# Decides which bin a hand is hovering. The dashboard then signals passively:
+# the hovered bin lights up as the right bin (in the work order) or the wrong
+# bin (not in it). No grab gesture or kinetic gating is involved.
 bin_assignment:
   method: "point_in_polygon"      # "point_in_polygon" | "nearest_centroid" | "area_overlap"
   hand_keypoint: "index_tip"      # Which landmark to use as the "reaching" point
   overlap_threshold: 0.3          # Min overlap ratio for area_overlap method
-
-  # Occlusion gate: when a hand reaches into a BOTTOM bin, the shelf lip hides the
-  # fingers and MediaPipe extrapolates the fingertip — sometimes into a TOP bin,
-  # producing a false top-bin hit. The gate detects this (proximal anchor — wrist
-  # or knuckles — at/below the bottom-bin rim) and reassigns to the bottom bin
-  # beneath. Off → assign() behaves exactly as before.
-  occlusion_gate:
-    enabled: true
 
 # --- Work Order (target pick counts) -------------
 # Predetermined target quantity for each bin, shown in the dashboard as
@@ -59,17 +53,8 @@ bin_assignment:
 # the live count with no target. Leave commented to disable targets entirely.
 work_order:
   targets:
-    - [5, 0, 5, 5, 0, 5]   # layer 0 (top) → 6 bins; 0 = not part of the job
-    - [3, 3, 3]            # layer 1 (bottom) → 3 bins
-
-# --- Triple-Gate FSM (Kinetic Gating) ------------
-fsm:
-  gate1_spatial_timeout: 2.0      # seconds — hand must stay in bin
-  gate2_intent_timeout: 1.5       # seconds — grab gesture detection window
-  gate3_verification_timeout: 3.0 # seconds — weight confirmation window
-  weight_delta_threshold: 50      # grams — minimum change to confirm pick/place
-  error_cooldown: 5.0             # seconds before retry after failure
-  max_retries: 3
+    - [5, 0, 5, 5, 0, 2]   # layer 0 (top) → 6 single-slot bins
+    - [3, 3, 3]            # layer 1 (bottom) → 3 double-slot bins
 
 # --- Sensing (future: Modbus / Serial) -----------
 sensing:
