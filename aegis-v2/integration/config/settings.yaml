@@ -53,8 +53,8 @@ bin_assignment:
 # the live count with no target. Leave commented to disable targets entirely.
 work_order:
   targets:
-    - [5, 0, 5, 5, 0, 2]   # layer 0 (top) → 6 single-slot bins
-    - [3, 3, 3]            # layer 1 (bottom) → 3 double-slot bins
+    - [5, 0, 5, 5, 0, 5]   # layer 0 (top) → 6 bins; 0 = not part of the job
+    - [3, 3, 3]            # layer 1 (bottom) → 3 bins
 
 # --- Sensing (future: Modbus / Serial) -----------
 sensing:

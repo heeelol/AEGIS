@@ -44,8 +44,6 @@ class HandStatus:
     hand_id: int
     handedness: str
     position: tuple[float, float] = (0.0, 0.0)
-    is_grabbing: bool = False
-    grab_score: float = 0.0
     assigned_bin: Optional[str] = None
 
 
@@ -62,9 +60,6 @@ class PipelineState:
         self._lock = threading.Lock()
         self._bins: dict[str, BinStatus] = {}
         self._hands: list[HandStatus] = []
-        self._fsm_state: str = "idle"
-        self._fsm_bin_id: Optional[str] = None
-        self._fsm_elapsed: float = 0.0
         self._errors: list[dict] = []
         self._fps: float = 0.0
         self._last_update: float = 0.0
@@ -112,8 +107,6 @@ class PipelineState:
                     hand_id=hand.hand_id,
                     handedness=hand.handedness,
                     position=center,
-                    is_grabbing=getattr(hand, "is_grabbing", False),
-                    grab_score=getattr(hand, "grab_score", 0.0),
                     assigned_bin=ev.bin_id if ev else None,
                 ))
 
@@ -129,15 +122,8 @@ class PipelineState:
                     b.hand_id = None
                     b.handedness = ""
 
-    def update_fsm(self, state: str, bin_id: Optional[str], elapsed: float) -> None:
-        """Update FSM state display."""
-        with self._lock:
-            self._fsm_state = state
-            self._fsm_bin_id = bin_id
-            self._fsm_elapsed = elapsed
-
     def record_pick(self, bin_id: str) -> None:
-        """Increment pick count for a bin (called on FSM success)."""
+        """Increment pick count for a bin."""
         with self._lock:
             if bin_id in self._bins:
                 self._bins[bin_id].pick_count += 1
@@ -225,20 +211,10 @@ class PipelineState:
                     "handedness": h.handedness,
                     "x": h.position[0],
                     "y": h.position[1],
-                    "is_grabbing": h.is_grabbing,
-                    "grab_score": h.grab_score,
                     "assigned_bin": h.assigned_bin,
                 }
                 for h in self._hands
             ]
-
-    def get_fsm(self) -> dict:
-        with self._lock:
-            return {
-                "state": self._fsm_state,
-                "bin_id": self._fsm_bin_id,
-                "elapsed": self._fsm_elapsed,
-            }
 
     def get_errors(self) -> list[dict]:
         with self._lock:

@@ -4,10 +4,9 @@ AEGIS v2 — FastAPI Dashboard Backend
 Serves the operator web dashboard and provides real-time API endpoints.
 
 The dashboard shows:
-  - Bin grid with color-coded status (white/orange/green/red)
-  - Hand tracking positions and grab status
-  - FSM gate progress
-  - Error alerts with full-screen overlay
+  - Bin grid with color-coded status (present/missing/active)
+  - Hand tracking positions and the bin each hand is hovering over
+  - Error alerts
   - Live FPS and system stats
 
 The pipeline pushes state into a shared PipelineState object;
@@ -89,13 +88,6 @@ def create_app(state: Optional[PipelineState] = None) -> FastAPI:
         if _state is None:
             return []
         return _state.get_hands()
-
-    @app.get("/api/fsm")
-    def get_fsm():
-        """Return current FSM state."""
-        if _state is None:
-            return {"state": "idle", "bin_id": None, "elapsed": 0}
-        return _state.get_fsm()
 
     @app.get("/api/errors")
     def get_errors():

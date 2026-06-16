@@ -2,18 +2,18 @@
 AEGIS v2 — Integration Pipeline
 =================================
 The main orchestrator that wires together:
-  1. CV Model   → Bin boundary detection (snapshot at startup)
+  1. CV Model   → Bin boundary detection (two-snapshot OBB grid flow)
   2. Hand Model → Real-time hand tracking (any registered backend)
-  3. Engine     → Bin assignment (which bin a hand is hovering)
+  3. Engine     → Bin assignment (which bin a hand is hovering over)
   4. UI         → OpenCV camera overlay + FastAPI web dashboard
 
 The dashboard signals passively: a hand hovering a bin lights that bin as the
 right bin (part of the work order) or the wrong bin (not part of it).
 
 Lifecycle:
-  INIT  — Open camera, snapshot bins, lock coordinates, load hand tracker,
-          build overlay, launch dashboard
-  LOOP  — Sense (detect hands) → Analyse (assign bins) → Act (UI)
+  INIT  — Open camera, load OBB model, load hand tracker, build overlay,
+          launch dashboard
+  LOOP  — Sense (detect hands) → Analyse (assign bins) → Act (UI highlight)
   STOP  — Cleanup resources
 
 Usage:
@@ -41,9 +41,7 @@ sys.path.insert(0, str(_ROOT))         # integration/
 # launched from any working directory.
 _DEFAULT_CONFIG = str(_ROOT / "integration" / "config" / "settings.yaml")
 
-from integration.src.detectors.initialize_bins_obb import load_model, detect_bins
-from integration.src.detectors.grid_session import GridSession
-from integration.src.engine import BinAssignmentEngine, BinRegion, OcclusionHold
+from integration.src.engine import BinAssignmentEngine, BinRegion
 from integration.src.sensing import LoadCellReader
 from integration.src.ui.overlay import OverlayUI
 from integration.src.ui.state import PipelineState
@@ -76,7 +74,7 @@ class Pipeline:
 
     Connects cv-models (bin detection) with hand-models (hand tracking)
     through the bin assignment engine, with both an OpenCV camera overlay
-    and a web dashboard that passively signals the right/wrong bin.
+    and a web dashboard for the operator.
     """
 
     def __init__(self, config_path: str = _DEFAULT_CONFIG):
@@ -88,7 +86,6 @@ class Pipeline:
         self._grid_session = GridSession()         # snapshot-1 grid + snapshot-2 kit
         self._hand_tracker: Optional[BaseHandTracker] = None
         self._assignment: Optional[BinAssignmentEngine] = None
-        self._hold: Optional[OcclusionHold] = None
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
         self._geofences: dict = {}
@@ -350,19 +347,13 @@ class Pipeline:
         self._hand_tracker = TrackerRegistry.create(backend, ht_cfg)
 
     def _create_engines(self) -> None:
-        # Bin assignment
+        # Bin assignment — maps each hand to the bin it is hovering over.
         assign_cfg = self._config.get("bin_assignment", {})
         self._assignment = BinAssignmentEngine(assign_cfg)
         self._assignment.set_bin_map_from_geofences(self._geofences)
 
-        # Occlusion hold — keeps a bottom-layer bin active while the picking
-        # hand is hidden under the rack (the stateless engine alone would drop
-        # it the instant the hand tracker loses sight).
-        self._hold = OcclusionHold(self._config.get("occlusion_hold", {}))
-        self._hold.set_eligible_bins(self._eligible_hold_bins())
-
-    def _eligible_hold_bins(self) -> set[str]:
-        """Bins eligible to be held when their hand disappears.
+    def _create_overlay(self) -> None:
+        """Build the OpenCV overlay renderer from the current geofences.
 
         Defaults to the bottom layer (largest row index present). When
         ``occlusion_hold.eligible_rows`` is set, those explicit row indices are
@@ -473,7 +464,6 @@ class Pipeline:
             self._state.update_bins(self._geofences, active_ids)
 
             if show_overlay:
-                _ts = time.perf_counter()
                 display = self._overlay.render(frame, hands, events)
                 cv2.imshow("AEGIS v2 — Bin Tracker", display)
                 key = cv2.waitKey(1) & 0xFF
@@ -498,13 +488,9 @@ class Pipeline:
 
             if frame_count % 300 == 0:
                 fps = frame_count / (time.time() - t0)
-                n = 300
-                logger.info(
-                    "FPS: %.1f | per-frame: read %.1fms, detect %.1fms, render %.1fms "
-                    "| Hands: %d | Active bins: %s",
-                    fps, t_read / n * 1000, t_detect / n * 1000, t_render / n * 1000,
-                    len(hands), ", ".join(active_ids) or "none")
-                t_read = t_detect = t_render = 0.0
+                logger.info("FPS: %.1f | Hands: %d | Active bins: %s",
+                            fps, len(hands),
+                            ", ".join(active_ids) or "none")
 
     # ── Cleanup ──────────────────────────────────────────────
 

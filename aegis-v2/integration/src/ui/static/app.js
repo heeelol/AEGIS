@@ -3,32 +3,20 @@
  * ===============================
  * Polls the FastAPI backend every 100ms and updates:
  *   - Bin grid with color-coded status
- *   - FSM gate progress
- *   - Hand tracking cards
+ *   - Hand tracking cards (which bin each hand is hovering over)
  *   - System stats
  *   - Error overlay
  */
 
 const POLL_INTERVAL = 100; // ms
 
-// ── FSM display config ──────────────────────────────
-const FSM_DISPLAY = {
-  idle:           { label: "IDLE",           css: "fsm-idle",    gates: [0, 0, 0] },
-  gate_1_spatial: { label: "GATE 1: SPATIAL",css: "fsm-spatial", gates: [1, 0, 0] },
-  gate_2_intent:  { label: "GATE 2: INTENT", css: "fsm-intent",  gates: [2, 1, 0] },
-  gate_3_verify:  { label: "GATE 3: VERIFY", css: "fsm-verify",  gates: [2, 2, 1] },
-  success:        { label: "SUCCESS",         css: "fsm-success", gates: [2, 2, 2] },
-  error:          { label: "ERROR",           css: "fsm-error",   gates: [-1,-1,-1] },
-};
-
 // ── Main poll loop ──────────────────────────────────
 async function poll() {
   try {
-    const [binsRes, layoutRes, handsRes, fsmRes, statsRes] = await Promise.all([
+    const [binsRes, layoutRes, handsRes, statsRes] = await Promise.all([
       fetch("/api/bins"),
       fetch("/api/layout"),
       fetch("/api/hands"),
-      fetch("/api/fsm"),
       fetch("/api/stats"),
     ]);
 
@@ -37,11 +25,9 @@ async function poll() {
     const bins   = await binsRes.json();
     const layout = await layoutRes.json();
     const hands  = await handsRes.json();
-    const fsm    = await fsmRes.json();
     const stats  = await statsRes.json();
 
     renderBins(bins, layout);
-    renderFSM(fsm);
     renderHands(hands);
     renderStats(stats);
 
@@ -180,33 +166,6 @@ async function overridePick(binId, delta) {
   }
 }
 
-// ── FSM state ───────────────────────────────────────
-function renderFSM(fsm) {
-  const display = FSM_DISPLAY[fsm.state] || FSM_DISPLAY.idle;
-  const label = document.getElementById("fsm-label");
-  const binEl = document.getElementById("fsm-bin");
-  const elapsedEl = document.getElementById("fsm-elapsed");
-
-  // Remove all fsm-* classes, add the current one
-  label.className = "";
-  label.classList.add(display.css);
-  label.textContent = display.label;
-
-  binEl.textContent = fsm.bin_id ? ("Bin: " + fsm.bin_id) : "";
-  elapsedEl.textContent = fsm.elapsed > 0 ? (fsm.elapsed.toFixed(1) + "s") : "";
-
-  // Gate dots
-  const dots = ["gate-1", "gate-2", "gate-3"];
-  for (let i = 0; i < 3; i++) {
-    const dot = document.getElementById(dots[i]);
-    dot.className = "gate-dot";
-    const g = display.gates[i];
-    if (g === 2) dot.classList.add("passed");
-    else if (g === 1) dot.classList.add("current");
-    else if (g === -1) dot.classList.add("failed");
-  }
-}
-
 // ── Hand cards ──────────────────────────────────────
 function renderHands(hands) {
   const container = document.getElementById("hands");
@@ -220,20 +179,14 @@ function renderHands(hands) {
   for (const hand of hands) {
     const card = document.createElement("div");
     card.className = "hand-card";
-
-    const grabClass = hand.is_grabbing ? "grabbing" : "open";
-    const grabText  = hand.is_grabbing ? "GRABBING" : "OPEN";
+    if (hand.assigned_bin) card.classList.add("hovering");
 
     card.innerHTML =
       '<div class="hand-label">' + hand.handedness + ' hand</div>' +
       '<div class="hand-detail">Position: (' +
         Math.round(hand.x) + ', ' + Math.round(hand.y) + ')</div>' +
-      '<div class="hand-detail">Bin: ' +
-        (hand.assigned_bin || '—') + '</div>' +
-      '<div>' +
-        '<span class="hand-grab ' + grabClass + '">' + grabText +
-        ' (' + (hand.grab_score * 100).toFixed(0) + '%)</span>' +
-      '</div>';
+      '<div class="hand-detail">Hovering: ' +
+        (hand.assigned_bin || '—') + '</div>';
 
     container.appendChild(card);
   }

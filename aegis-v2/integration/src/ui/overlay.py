@@ -6,8 +6,7 @@ OpenCV-based real-time visualization drawn on every camera frame.
 Renders:
   - Bin boundary rectangles with color-coded fill (active vs inactive)
   - Hand skeleton (21 landmarks + connections)
-  - Grab gesture indicator (red = grabbing, blue = open)
-  - Status bar with current bin assignments
+  - Status bar with the bin each hand is hovering over
   - FPS counter
 """
 
@@ -20,7 +19,6 @@ import cv2
 import numpy as np
 
 from integration.src.engine.bin_assignment import BinEvent, BinRegion
-from integration.src.engine.fsm import FSMState
 
 # Up to 12 distinct bin colors (BGR)
 _BIN_COLORS = [
@@ -60,8 +58,6 @@ class OverlayUI:
         frame: np.ndarray,
         hands: list,
         events: list[BinEvent],
-        fsm_state: FSMState = FSMState.IDLE,
-        fsm_info: dict | None = None,
     ) -> np.ndarray:
         """
         Draw all overlays on a copy of *frame* and return the annotated image.
@@ -71,8 +67,6 @@ class OverlayUI:
         frame : BGR image from camera
         hands : list of HandDetection from the hand tracker
         events : list of BinEvent from the assignment engine
-        fsm_state : current FSM state
-        fsm_info : dict from fsm.get_state_info() (for elapsed time display)
         """
         now = time.time()
         self._frame_times.append(now)
@@ -142,12 +136,9 @@ class OverlayUI:
         if not lms:
             return
 
-        is_grabbing = getattr(hand, "is_grabbing", False)
-        grab_score = getattr(hand, "grab_score", 0.0)
-
-        # Skeleton color: red if grabbing, green if open
-        skel_color = (0, 0, 255) if is_grabbing else (0, 255, 0)
-        point_color = (0, 80, 255) if is_grabbing else (255, 0, 0)
+        # Single fixed color — we only care about where the hand is, not its grip.
+        skel_color = (0, 255, 0)
+        point_color = (255, 0, 0)
 
         # Draw bone connections
         for i, j in _HAND_CONNECTIONS:
@@ -167,9 +158,6 @@ class OverlayUI:
             cv2.rectangle(img, (bx1, by1), (bx2, by2), skel_color, 1)
 
             label = hand.handedness.upper()
-            if is_grabbing:
-                label += " GRAB"
-            label += f" ({grab_score:.0%})"
 
             cv2.putText(img, label, (bx1, by1 - 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, skel_color, 2)
@@ -191,9 +179,8 @@ class OverlayUI:
         else:
             parts = []
             for ev in events:
-                grab_marker = ""
                 if ev.bin_id is not None:
-                    parts.append(f"{ev.handedness} -> {ev.bin_label}{grab_marker}")
+                    parts.append(f"{ev.handedness} -> {ev.bin_label}")
                 else:
                     parts.append(f"{ev.handedness} -> outside")
             text = "  |  ".join(parts)

@@ -52,90 +52,6 @@ h1 {
 
 .hidden { display: none !important; }
 
-/* ── FSM Banner ──────────────────────────────────── */
-
-#fsm-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 24px;
-  background: #121828;
-  border-bottom: 1px solid #1e2a3a;
-}
-
-.fsm-state {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-#fsm-label {
-  font-size: 16px;
-  font-weight: 700;
-  padding: 5px 16px;
-  border-radius: 6px;
-  background: #253040;
-  color: #8aa0b8;
-}
-
-.fsm-detail {
-  font-size: 13px;
-  color: #6a7a8e;
-}
-
-.gate-dots {
-  display: flex;
-  gap: 10px;
-}
-
-.gate-dot {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 14px;
-  font-weight: 700;
-  color: #222;
-  background: #2a3545;
-  border: 2px solid #3a4a5a;
-  transition: all 0.3s ease;
-}
-
-.gate-dot.passed {
-  background: #22c55e;
-  border-color: #16a34a;
-  color: #052e16;
-}
-
-.gate-dot.current {
-  background: #f59e0b;
-  border-color: #d97706;
-  color: #451a03;
-  animation: pulse 1s ease-in-out infinite;
-}
-
-.gate-dot.failed {
-  background: #ef4444;
-  border-color: #dc2626;
-  color: #450a0a;
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-}
-
-/* ── FSM State Colors ────────────────────────────── */
-
-.fsm-idle       { background: #253040 !important; color: #8aa0b8 !important; }
-.fsm-spatial    { background: #1e3a5f !important; color: #60a5fa !important; }
-.fsm-intent     { background: #3b2f08 !important; color: #fbbf24 !important; }
-.fsm-verify     { background: #1a3328 !important; color: #4ade80 !important; }
-.fsm-success    { background: #14532d !important; color: #22c55e !important; }
-.fsm-error      { background: #450a0a !important; color: #f87171 !important; }
-
 /* ── Sections ────────────────────────────────────── */
 
 section {
@@ -301,6 +217,12 @@ h2 {
   gap: 6px;
 }
 
+/* Hand currently hovering over a bin — highlight the card. */
+.hand-card.hovering {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6 inset;
+}
+
 .hand-label {
   font-size: 15px;
   font-weight: 700;
@@ -311,17 +233,6 @@ h2 {
   font-size: 13px;
   color: #6a7a8e;
 }
-
-.hand-grab {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.hand-grab.open    { background: #1a3328; color: #4ade80; }
-.hand-grab.grabbing{ background: #450a0a; color: #f87171; }
 
 .no-hands {
   color: #4a6078;
