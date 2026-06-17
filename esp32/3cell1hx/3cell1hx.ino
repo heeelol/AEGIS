@@ -27,7 +27,7 @@
 const int SCK_PIN = 5;          // TODO: set your shared SCK GPIO
 
 // ---------- BIN TABLE ----------
-const int NUM_BINS = 1;          // number of bins (each = one HX711)
+const int NUM_BINS = 3;          // number of bins (each = one HX711)
 
 struct Bin {
   const char* id;                // JSON key, must match loadcell.py (bin_row_col)
@@ -41,15 +41,16 @@ struct Bin {
 //
 Bin bins[NUM_BINS] = {
   // id          dout    scale        offset
-  { "bin_0_0",   13,     142.187,         0 },
-  // { "bin_0_1",   19,     1.0,         0 },
+  { "bin_0_0",  13, 142.187,  0 },
+  { "bin_0_1",  14, 1056.4103,  0 },
+  { "bin_1_0",  15, 72.7177,  0},
 };
 
 HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
 const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 383.1;  // known reference mass, grams
+const float CAL_MASS_G     = 113.1;  // known reference mass, grams
 
 // ---------- FILTER ----------
 const int N_SAMPLES = 3;    // readings averaged per bin per cycle
