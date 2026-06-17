@@ -2,7 +2,7 @@
 # ================================================
 
 camera:
-  source: 0                   # 0 = default webcam, or video path / RTSP URL
+  source: 1                   # 0 = default webcam, or video path / RTSP URL
   width: 1280
   height: 720
   fps: 30
@@ -92,10 +92,14 @@ sensing:
   # While disabled (or the port can't be opened) the dashboard layout comes
   # from CV detection only and no weights are shown.
   loadcells:
-    enabled: false
-    port: "/dev/ttyUSB0"   # ESP32 USB device (Windows: "COM3")
+    enabled: true
+    port: "COM5"           # Silicon Labs CP210x (ESP32) — driver installed 2026-06-17
     baudrate: 115200
     stale_after: 5.0       # seconds without data → treated as disconnected
+    # Firmware labels its single cell "bin_0_0"; this cell is physically bin_0_5.
+    # Renamed at the reader before caching, so everything downstream sees bin_0_5.
+    bin_remap:
+      bin_0_0: bin_0_5
 
 # --- OpenCV Camera Overlay -----------------------
 ui:

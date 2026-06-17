@@ -65,6 +65,10 @@ class LoadCellReader:
         self._port = self._config.get("port", "/dev/ttyUSB0")
         self._baudrate = int(self._config.get("baudrate", 115200))
         self._stale_after = float(self._config.get("stale_after", 2.0))
+        # Optional {firmware_bin_id: canonical_bin_id} rename, applied to every
+        # reading before it is cached, so all downstream consumers (weights,
+        # layout, inventory, dashboard) see the canonical id.
+        self._remap: dict[str, str] = dict(self._config.get("bin_remap") or {})
 
         self._serial = None
         self._thread: threading.Thread | None = None
@@ -116,6 +120,7 @@ class LoadCellReader:
                 continue  # timeout, no data this tick
             weights = self._parse_line(raw)
             if weights is not None:
+                weights = self._apply_remap(weights)
                 with self._lock:
                     self._weights = weights
                     self._last_rx = time.time()
@@ -142,6 +147,13 @@ class LoadCellReader:
             except (TypeError, ValueError):
                 continue
         return out
+
+    def _apply_remap(self, weights: dict[str, float]) -> dict[str, float]:
+        """Rename bin ids per ``self._remap``; identity when remap/weights empty."""
+        if not self._remap or not weights:
+            return weights
+        return {self._remap.get(bin_id, bin_id): grams
+                for bin_id, grams in weights.items()}
 
     # ── Public interface (unchanged contract) ────────────────
 

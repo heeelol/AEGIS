@@ -64,6 +64,19 @@ def _load_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def derive_pick_counts(weights: dict, tracker, connected: bool) -> dict:
+    """Pick counts to push to state from load-cell weights.
+
+    Returns ``{bin_id: count}`` for inventory-mapped bins when the cell is
+    connected, else ``{}`` (the connected-guard: a dropped link must not
+    overwrite counts). ``tracker.items_taken`` already clamps at >= 0 and
+    only includes bins present in inventory.yaml.
+    """
+    if not connected:
+        return {}
+    return tracker.items_taken(weights)
+
+
 class Pipeline:
     """
     Main AEGIS v2 orchestrator.
@@ -86,6 +99,7 @@ class Pipeline:
         self._assignment: Optional[BinAssignmentEngine] = None
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
+        self._inventory = None                    # InventoryTracker (built with load cells)
         self._geofences: dict = {}
         self._rotate_180: bool = bool(
             self._config.get("camera", {}).get("rotate_180", False))
@@ -309,12 +323,32 @@ class Pipeline:
         """
         lc_cfg = self._config.get("sensing", {}).get("loadcells", {})
         self._loadcells = LoadCellReader(lc_cfg)
+        from integration.src.sensing import InventoryTracker
+        self._inventory = InventoryTracker()        # loads config/inventory.yaml
         layout = self._loadcells.get_layout()
         self._state.update_loadcells(layout, self._loadcells.get_weights())
+        self._apply_loadcell_counts()
         if self._loadcells.is_connected():
             logger.info("Load cells connected: %d layer(s)", layout.num_layers)
         else:
             logger.info("Load cells not connected (stub) — layout from CV only")
+
+    def _apply_loadcell_counts(self) -> None:
+        """Drive mapped bins' pick counts from the latest load-cell weights.
+
+        Authoritative for inventory-mapped bins while the cell is connected;
+        the connected-guard in ``derive_pick_counts`` leaves counts alone when
+        the link drops. Bins absent from inventory.yaml are never touched.
+        """
+        if self._loadcells is None or self._inventory is None:
+            return
+        counts = derive_pick_counts(
+            self._loadcells.get_weights(),
+            self._inventory,
+            self._loadcells.is_connected(),
+        )
+        for bin_id, count in counts.items():
+            self._state.set_pick_count(bin_id, count)
 
     def _load_hand_tracker(self) -> None:
         ht_cfg = self._config.get("hand_tracker", {})
@@ -473,6 +507,7 @@ class Pipeline:
                         self._loadcells.get_layout(),
                         self._loadcells.get_weights(),
                     )
+                    self._apply_loadcell_counts()
 
             if frame_count % 300 == 0:
                 fps = frame_count / (time.time() - t0)
