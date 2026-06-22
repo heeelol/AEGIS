@@ -23,7 +23,7 @@ from ultralytics import YOLO
 logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "project_9_yolov8_obb_1_rotate.pt"   # OBB model under models/custom/
+MODEL_NAME = "project_9_yolov8_obb_1.pt"   # OBB model under models/custom/
 
 # Distinct BGR colors for up to a handful of bins
 BIN_COLORS = [
@@ -190,12 +190,19 @@ def draw_overlay(image, bins, probe=None):
 
 # ──────────────────────────────── Save / load ──────────────────────────────────────
 
-def save_bins(bins, out_path):
+def save_bins(bins, out_path, frame=None):
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    data = [{"id": b["id"], "corners": b["corners"].tolist(), "center": list(b["center"])}
+    data = [{"id": b["id"], "corners": b["corners"].tolist(),
+             "center": list(b["center"]), "conf": float(b.get("conf", 0.0))}
             for b in bins]
+    payload = {"bins": data, "rule": "nearest_center", "source": "obb"}
+    if frame is not None:
+        payload["frame_h"], payload["frame_w"] = int(frame.shape[0]), int(frame.shape[1])
+        snap_path = out_path.parent / "snapshot.jpg"
+        cv2.imwrite(str(snap_path), frame)
+        logger.info(f"✓ Saved snapshot image -> {snap_path}")
     with open(out_path, "w") as f:
-        json.dump({"bins": data, "rule": "nearest_center", "source": "obb"}, f, indent=2)
+        json.dump(payload, f, indent=2)
     logger.info(f"✓ Saved raw bin boxes + centers -> {out_path}")
 
 
@@ -216,13 +223,14 @@ def initialize_image(image_path, model, save_path, expected_count=None):
     if image is None:
         logger.error(f"Failed to load image: {image_path}")
         return
+    image = cv2.rotate(image, cv2.ROTATE_180)
 
     bins = detect_bins(image, model, expected_count)
     if not bins:
         logger.warning("No bins detected.")
         return
     logger.info(f"✓ Detected {len(bins)} bins")
-    save_bins(bins, save_path)
+    save_bins(bins, save_path, image)
 
     win = "Bins (OBB raw) - click to test, 'q' to quit"
     cv2.namedWindow(win)
@@ -276,6 +284,7 @@ def initialize_webcam(model, save_path, camera_idx=0, expected_count=None):
         ret, frame = cap.read()
         if not ret:
             break
+        frame = cv2.rotate(frame, cv2.ROTATE_180)
         frame_count += 1
         if frame_count % 5 == 0 or not bins:
             detected = detect_bins(frame, model, expected_count)
@@ -287,7 +296,7 @@ def initialize_webcam(model, save_path, camera_idx=0, expected_count=None):
         if key == ord("q"):
             break
         if key == ord("s") and bins:
-            save_bins(bins, save_path)
+            save_bins(bins, save_path, frame)
 
     cap.release()
     cv2.destroyAllWindows()
@@ -306,6 +315,7 @@ def initialize_batch(folder_path, model, out_dir, expected_count=None):
         image = cv2.imread(str(img_path))
         if image is None:
             continue
+        image = cv2.rotate(image, cv2.ROTATE_180)
         bins = detect_bins(image, model, expected_count)
         overlay = draw_overlay(image, bins)
         out = out_dir / f"{img_path.stem}_obb_raw.jpg"

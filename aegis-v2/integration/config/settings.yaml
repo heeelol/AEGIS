@@ -2,17 +2,20 @@
 # ================================================
 
 camera:
-  source: 0                       # 0 = default webcam, or video path / RTSP URL
+  source: 1                   # 0 = default webcam, or video path / RTSP URL
   width: 1280
   height: 720
   fps: 30
   warmup_frames: 30               # frames discarded before the init snapshot so
                                   # exposure/focus settle (USB cams need this; raise
                                   # if the Logitech still detects nothing)
+  rotate_180: true                # rotate every frame 180° to match the rig mount
 
 # --- Bin Boundary Detector (from cv-models) ------
 bin_detector:
-  model_path: "./cv-models/models/weights/best.pt"   # Trained YOLOv8-seg weights
+  # Native OBB (oriented bounding box) bin model. Relative paths resolve against
+  # the aegis-v2 root, so the pipeline can launch from any working directory.
+  model_path: "./cv-models/models/weights/project_9_yolov8_obb_1.pt"
   confidence_threshold: 0.5
   iou_threshold: 0.45
   device: "cpu"                   # "cpu" or "cuda:0"
@@ -36,9 +39,31 @@ hand_tracker:
 
 # --- Bin Assignment Engine -----------------------
 bin_assignment:
-  method: "point_in_polygon"      # "point_in_polygon" | "nearest_centroid" | "area_overlap"
+  method: "finger_vote"           # "point_in_polygon" | "nearest_centroid" | "area_overlap" | "finger_vote"
   hand_keypoint: "index_tip"      # Which landmark to use as the "reaching" point
-  overlap_threshold: 0.3          # Min overlap ratio for area_overlap method
+  overlap_threshold: 0.5          # Min overlap ratio for area_overlap method
+                                  # ratio = (hand_box ∩ bin_box) / full_hand_box_area,
+                                  # i.e. fraction of the hand bbox inside the bin
+
+  # Finger-vote method (set method: "finger_vote" above to use it). The index
+  # and middle fingertips each vote for the bin they fall in; agreement (or a
+  # single inside tip) wins, a split is broken by deepest penetration (the tip
+  # planted furthest from a bin edge), and if neither tip is inside a bin their
+  # centroid is used. Tips below the confidence floor or off-frame are ignored.
+  # Index + middle is the human tripod-pick set; do not add ring/pinky (they
+  # flail in precision picks and add false cross-bin votes).
+  vote_keypoints: [index_tip, middle_tip]
+  vote_confidence_floor: 0.5
+
+  # Occlusion gate: when a hand reaches into a BOTTOM bin, the shelf lip hides the
+  # fingers and MediaPipe extrapolates the fingertip — sometimes into a TOP bin,
+  # producing a false top-bin hit. The gate detects this (knuckle anchor — MCP
+  # centroid, wrist as fallback — at/below the bottom-bin rim) and reassigns to
+  # the bottom bin beneath. The knuckles (not the wrist) decide, so a genuine
+  # reach OVER the lip into a top bin, with the wrist trailing low, stays on the
+  # top bin. Off → assign() behaves exactly as before.
+  occlusion_gate:
+    enabled: true
 
 # --- Work Order (target pick counts) -------------
 # Predetermined target quantity for each bin, shown in the dashboard as
@@ -48,17 +73,8 @@ bin_assignment:
 # the live count with no target. Leave commented to disable targets entirely.
 work_order:
   targets:
-    - [5, 0, 5, 5]   # layer 0 → 4 bins
-    - [3, 3, 3]      # layer 1 → 3 bins
-
-# --- Triple-Gate FSM (Kinetic Gating) ------------
-fsm:
-  gate1_spatial_timeout: 2.0      # seconds — hand must stay in bin
-  gate2_intent_timeout: 1.5       # seconds — grab gesture detection window
-  gate3_verification_timeout: 3.0 # seconds — weight confirmation window
-  weight_delta_threshold: 50      # grams — minimum change to confirm pick/place
-  error_cooldown: 5.0             # seconds before retry after failure
-  max_retries: 3
+    - [5, 0, 5, 5, 0, 5]   # layer 0 (top) → 6 bins; 0 = not part of the job
+    - [3, 3, 3]            # layer 1 (bottom) → 3 bins
 
 # --- Sensing (future: Modbus / Serial) -----------
 sensing:
@@ -76,10 +92,14 @@ sensing:
   # While disabled (or the port can't be opened) the dashboard layout comes
   # from CV detection only and no weights are shown.
   loadcells:
-    enabled: false
-    port: "/dev/ttyUSB0"   # ESP32 USB device (Windows: "COM3")
+    enabled: true
+    port: "COM5"           # Silicon Labs CP210x (ESP32) — driver installed 2026-06-17
     baudrate: 115200
     stale_after: 5.0       # seconds without data → treated as disconnected
+    # Firmware labels its single cell "bin_0_0"; this cell is physically bin_0_5.
+    # Renamed at the reader before caching, so everything downstream sees bin_0_5.
+    bin_remap:
+      bin_0_0: bin_0_5
 
 # --- OpenCV Camera Overlay -----------------------
 ui:
@@ -94,6 +114,7 @@ ui:
 dashboard:
   enabled: true
   port: 8080                      # http://localhost:8080
+  open_browser: true              # auto-open the UI in the default browser on run
 
 # --- Debug ---------------------------------------
 debug:

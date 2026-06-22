@@ -6,9 +6,7 @@ OpenCV-based real-time visualization drawn on every camera frame.
 Renders:
   - Bin boundary rectangles with color-coded fill (active vs inactive)
   - Hand skeleton (21 landmarks + connections)
-  - Grab gesture indicator (red = grabbing, blue = open)
-  - FSM state badge + gate progress bar
-  - Status bar with current bin assignments
+  - Status bar with the bin each hand is hovering over
   - FPS counter
 """
 
@@ -21,7 +19,6 @@ import cv2
 import numpy as np
 
 from integration.src.engine.bin_assignment import BinEvent, BinRegion
-from integration.src.engine.fsm import FSMState
 
 # Up to 12 distinct bin colors (BGR)
 _BIN_COLORS = [
@@ -30,16 +27,6 @@ _BIN_COLORS = [
     (200, 150, 50),  (50, 200, 150),  (150, 50, 200),
     (200, 200, 200), (128, 0, 0),     (0, 128, 0),
 ]
-
-# FSM state → display color (BGR) and label
-_FSM_DISPLAY = {
-    FSMState.IDLE:          ((180, 180, 180), "IDLE"),
-    FSMState.GATE_1_SPATIAL:((0, 200, 255),   "GATE 1: SPATIAL"),
-    FSMState.GATE_2_INTENT: ((0, 180, 255),   "GATE 2: INTENT"),
-    FSMState.GATE_3_VERIFY: ((0, 140, 255),   "GATE 3: VERIFY"),
-    FSMState.SUCCESS:       ((0, 220, 0),     "SUCCESS"),
-    FSMState.ERROR:         ((0, 0, 255),     "ERROR"),
-}
 
 # Hand skeleton connections (pairs of landmark indices in the 21-point model)
 _HAND_CONNECTIONS = [
@@ -71,8 +58,6 @@ class OverlayUI:
         frame: np.ndarray,
         hands: list,
         events: list[BinEvent],
-        fsm_state: FSMState = FSMState.IDLE,
-        fsm_info: dict | None = None,
     ) -> np.ndarray:
         """
         Draw all overlays on a copy of *frame* and return the annotated image.
@@ -82,8 +67,6 @@ class OverlayUI:
         frame : BGR image from camera
         hands : list of HandDetection from the hand tracker
         events : list of BinEvent from the assignment engine
-        fsm_state : current FSM state
-        fsm_info : dict from fsm.get_state_info() (for elapsed time display)
         """
         now = time.time()
         self._frame_times.append(now)
@@ -98,7 +81,6 @@ class OverlayUI:
             for hand in hands:
                 self._draw_hand(display, hand)
 
-        self._draw_fsm_badge(display, fsm_state, fsm_info)
         self._draw_status_bar(display, events)
 
         if self._show_fps:
@@ -154,12 +136,9 @@ class OverlayUI:
         if not lms:
             return
 
-        is_grabbing = getattr(hand, "is_grabbing", False)
-        grab_score = getattr(hand, "grab_score", 0.0)
-
-        # Skeleton color: red if grabbing, green if open
-        skel_color = (0, 0, 255) if is_grabbing else (0, 255, 0)
-        point_color = (0, 80, 255) if is_grabbing else (255, 0, 0)
+        # Single fixed color — we only care about where the hand is, not its grip.
+        skel_color = (0, 255, 0)
+        point_color = (255, 0, 0)
 
         # Draw bone connections
         for i, j in _HAND_CONNECTIONS:
@@ -179,65 +158,9 @@ class OverlayUI:
             cv2.rectangle(img, (bx1, by1), (bx2, by2), skel_color, 1)
 
             label = hand.handedness.upper()
-            if is_grabbing:
-                label += " GRAB"
-            label += f" ({grab_score:.0%})"
 
             cv2.putText(img, label, (bx1, by1 - 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, skel_color, 2)
-
-    # ── FSM badge ────────────────────────────────────────────
-
-    def _draw_fsm_badge(
-        self,
-        img: np.ndarray,
-        state: FSMState,
-        info: dict | None,
-    ) -> None:
-        """Draw a state badge in the top-right corner with gate progress."""
-        h, w = img.shape[:2]
-        color, label = _FSM_DISPLAY.get(state, ((180, 180, 180), state.value))
-
-        # Badge background
-        badge_w, badge_h = 260, 60
-        bx = w - badge_w - 10
-        by = 10
-        overlay = img.copy()
-        cv2.rectangle(overlay, (bx, by), (bx + badge_w, by + badge_h), (30, 30, 30), -1)
-        cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
-        cv2.rectangle(img, (bx, by), (bx + badge_w, by + badge_h), color, 2)
-
-        # State label
-        cv2.putText(img, label, (bx + 10, by + 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
-
-        # Elapsed time & bin ID
-        if info:
-            elapsed = info.get("elapsed_time", 0)
-            bin_id = info.get("bin_id", "—")
-            cv2.putText(img, f"Bin: {bin_id}  {elapsed:.1f}s",
-                        (bx + 10, by + 48),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
-
-        # Gate progress dots
-        gate_states = [FSMState.GATE_1_SPATIAL, FSMState.GATE_2_INTENT, FSMState.GATE_3_VERIFY]
-        gate_labels = ["S", "I", "V"]
-        current_idx = gate_states.index(state) if state in gate_states else -1
-
-        for i, (gs, gl) in enumerate(zip(gate_states, gate_labels)):
-            cx = bx + badge_w - 70 + i * 22
-            cy = by + 18
-            if state == FSMState.SUCCESS:
-                dot_color = (0, 220, 0)
-            elif i < current_idx:
-                dot_color = (0, 220, 0)      # passed
-            elif i == current_idx:
-                dot_color = (0, 200, 255)     # current
-            else:
-                dot_color = (100, 100, 100)   # pending
-            cv2.circle(img, (cx, cy), 8, dot_color, -1)
-            cv2.putText(img, gl, (cx - 4, cy + 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 0), 1)
 
     # ── Status bar ───────────────────────────────────────────
 
@@ -256,9 +179,8 @@ class OverlayUI:
         else:
             parts = []
             for ev in events:
-                grab_marker = ""
                 if ev.bin_id is not None:
-                    parts.append(f"{ev.handedness} -> {ev.bin_label}{grab_marker}")
+                    parts.append(f"{ev.handedness} -> {ev.bin_label}")
                 else:
                     parts.append(f"{ev.handedness} -> outside")
             text = "  |  ".join(parts)

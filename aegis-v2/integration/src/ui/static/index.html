@@ -3,69 +3,53 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AEGIS v2 — Operator Dashboard</title>
+  <title>AEGIS — Kitting Operator</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-  <header>
-    <div class="header-left">
-      <h1>AEGIS v2</h1>
-      <span class="subtitle">Bin Tracker &amp; Kinetic Gating</span>
-    </div>
-    <div class="header-right">
-      <div id="fps-display" class="stat-chip">— FPS</div>
-      <div id="last-updated" class="stat-chip">Connecting...</div>
-    </div>
-  </header>
+  <div class="console">
 
-  <!-- FSM State Banner -->
-  <div id="fsm-banner">
-    <div class="fsm-state">
-      <span id="fsm-label">IDLE</span>
-      <span id="fsm-bin" class="fsm-detail"></span>
-      <span id="fsm-elapsed" class="fsm-detail"></span>
+    <!-- Status rail -->
+    <header>
+      <div class="header-left">
+        <h1>AEGIS<span class="mark">//</span>KIT</h1>
+        <span class="subtitle">Operator · Kitting</span>
+      </div>
+      <div class="header-right">
+        <div id="fps-display" class="stat-chip">— FPS</div>
+        <div id="last-updated" class="stat-chip link">Linking…</div>
+      </div>
+    </header>
+
+    <!-- Bins (the whole story) -->
+    <div class="workspace">
+      <section class="bins-zone">
+        <h2>Bins</h2>
+        <div id="bins"></div>
+      </section>
     </div>
-    <div class="gate-dots">
-      <div class="gate-dot" id="gate-1" title="Gate 1: Spatial">S</div>
-      <div class="gate-dot" id="gate-2" title="Gate 2: Intent">I</div>
-      <div class="gate-dot" id="gate-3" title="Gate 3: Verify">V</div>
+
+    <!-- Status bar: one instruction + the Complete button (appears when ready) -->
+    <div id="statusbar" class="statusbar">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-msg">Waiting for calibration…</span>
+      <button id="complete-btn" class="complete-btn hidden">Complete kit</button>
     </div>
+
   </div>
 
-  <!-- Bin Grid -->
-  <section id="bins-section">
-    <h2>Bins</h2>
-    <main id="bins"></main>
-  </section>
-
-  <!-- Hand Tracking Status -->
-  <section id="hands-section">
-    <h2>Hand Tracking</h2>
-    <div id="hands"></div>
-  </section>
-
-  <!-- System Stats -->
-  <section id="stats-section">
-    <div class="stats-row">
-      <div class="stat-box">
-        <div class="stat-label">Frames</div>
-        <div class="stat-value" id="stat-frames">0</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Uptime</div>
-        <div class="stat-value" id="stat-uptime">0s</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Bins</div>
-        <div class="stat-value" id="stat-bins">0</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Hands</div>
-        <div class="stat-value" id="stat-hands">0</div>
+  <!-- Complete-kit confirmation -->
+  <div id="confirm-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">Complete this kit?</div>
+      <div class="modal-body">Every bin is verified. Closing the kit logs it and clears the station for the next one.</div>
+      <div class="modal-actions">
+        <button id="confirm-cancel" class="modal-btn cancel">Cancel</button>
+        <button id="confirm-proceed" class="modal-btn proceed">Proceed</button>
       </div>
     </div>
-  </section>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

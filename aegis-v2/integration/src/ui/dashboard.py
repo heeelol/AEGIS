@@ -4,10 +4,9 @@ AEGIS v2 — FastAPI Dashboard Backend
 Serves the operator web dashboard and provides real-time API endpoints.
 
 The dashboard shows:
-  - Bin grid with color-coded status (white/orange/green/red)
-  - Hand tracking positions and grab status
-  - FSM gate progress
-  - Error alerts with full-screen overlay
+  - Bin grid with color-coded status (present/missing/active)
+  - Hand tracking positions and the bin each hand is hovering over
+  - Error alerts
   - Live FPS and system stats
 
 The pipeline pushes state into a shared PipelineState object;
@@ -26,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import webbrowser
 from pathlib import Path
 from typing import Optional
 
@@ -88,13 +88,6 @@ def create_app(state: Optional[PipelineState] = None) -> FastAPI:
         if _state is None:
             return []
         return _state.get_hands()
-
-    @app.get("/api/fsm")
-    def get_fsm():
-        """Return current FSM state."""
-        if _state is None:
-            return {"state": "idle", "bin_id": None, "elapsed": 0}
-        return _state.get_fsm()
 
     @app.get("/api/errors")
     def get_errors():
@@ -173,12 +166,14 @@ def start_dashboard(
     state: PipelineState,
     host: str = "0.0.0.0",
     port: int = 8080,
+    open_browser: bool = True,
 ) -> threading.Thread:
     """
     Launch the dashboard in a background daemon thread.
 
     Called by the pipeline to start the web UI alongside the CV loop.
-    Returns the thread handle.
+    When ``open_browser`` is set, the operator UI is opened in the default
+    browser shortly after the server starts. Returns the thread handle.
     """
     import uvicorn
 
@@ -194,4 +189,21 @@ def start_dashboard(
     thread = threading.Thread(target=_run, daemon=True, name="aegis-dashboard")
     thread.start()
     logger.info("Dashboard thread started")
+
+    if open_browser:
+        # Open the operator UI once the server has had a moment to bind. 0.0.0.0
+        # isn't browsable, so always point the browser at localhost. Runs on a
+        # daemon Timer so a headless/no-browser host never blocks or hangs exit.
+        url = f"http://localhost:{port}"
+
+        def _open():
+            try:
+                webbrowser.open(url)
+            except Exception as e:  # pragma: no cover - environment dependent
+                logger.warning("Could not open browser at %s: %s", url, e)
+
+        opener = threading.Timer(1.0, _open)
+        opener.daemon = True
+        opener.start()
+
     return thread

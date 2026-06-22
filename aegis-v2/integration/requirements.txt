@@ -14,4 +14,4 @@ uvicorn[standard]>=0.23.0
 
 # Hardware (enable when connecting sensors)
 # pymodbus>=3.4.0
-# pyserial>=3.5
+pyserial>=3.5          # load-cell array over ESP32 USB serial

@@ -1,74 +1,75 @@
 /**
- * AEGIS v2 — Dashboard Frontend
- * ===============================
- * Polls the FastAPI backend every second and updates:
- *   - Bin grid with color-coded status
- *   - FSM gate progress
- *   - Hand tracking cards
- *   - System stats
- *   - Error overlay
+ * AEGIS — Kitting Operator Frontend
+ * ==================================
+ * Runs on the live dashboard.py backend. Bins fill toward green; the one
+ * instruction lives in the status bar; the Complete button appears when every
+ * in-job bin is at its target. Pick-based: a bin is green when current == total
+ * (load-cell / FSM driven). Layout is slot-proportional (6 top + 3 bottom).
+ *
+ * Consumes:
+ *   /api/bins   -> [{id,label,layer,col,current,total,using,is_active,handedness,...}]
+ *   /api/layout -> {layers:[{layer,row_slots,bins:[{id,slot_start,span,detected}]}]}
+ *   /api/stats  -> {fps,...}
+ *   /api/bins/{id}/pick  (load-cell stand-in: {delta} / {count})
  */
 
-const POLL_INTERVAL = 1000; // ms
+const POLL_INTERVAL = 250; // ms
 
-// ── FSM display config ──────────────────────────────
-const FSM_DISPLAY = {
-  idle:           { label: "IDLE",           css: "fsm-idle",    gates: [0, 0, 0] },
-  gate_1_spatial: { label: "GATE 1: SPATIAL",css: "fsm-spatial", gates: [1, 0, 0] },
-  gate_2_intent:  { label: "GATE 2: INTENT", css: "fsm-intent",  gates: [2, 1, 0] },
-  gate_3_verify:  { label: "GATE 3: VERIFY", css: "fsm-verify",  gates: [2, 2, 1] },
-  success:        { label: "SUCCESS",         css: "fsm-success", gates: [2, 2, 2] },
-  error:          { label: "ERROR",           css: "fsm-error",   gates: [-1,-1,-1] },
-};
+// ── Per-bin derivation (client-side, from raw fields + detected) ──
+function binStatus(b, detected) {
+  if (!detected) return "missing";
+  if (!b.using || b.total <= 0) return "not_in_bom";
+  if (b.current > b.total) return "overpick";
+  if (b.current >= b.total) return "complete";
+  return "incomplete";
+}
+function isWrongBin(b, status) {
+  return b.is_active && (status === "not_in_bom" || status === "complete");
+}
 
 // ── Main poll loop ──────────────────────────────────
 async function poll() {
   try {
-    const [binsRes, layoutRes, handsRes, fsmRes, statsRes] = await Promise.all([
+    const [binsRes, layoutRes, statsRes] = await Promise.all([
       fetch("/api/bins"),
       fetch("/api/layout"),
-      fetch("/api/hands"),
-      fetch("/api/fsm"),
       fetch("/api/stats"),
     ]);
-
     if (!binsRes.ok) throw new Error("Backend error");
 
     const bins   = await binsRes.json();
     const layout = await layoutRes.json();
-    const hands  = await handsRes.json();
-    const fsm    = await fsmRes.json();
     const stats  = await statsRes.json();
 
-    renderBins(bins, layout);
-    renderFSM(fsm);
-    renderHands(hands);
-    renderStats(stats);
+    const detectedById = {};
+    for (const layer of (layout.layers || [])) {
+      for (const slot of layer.bins) detectedById[slot.id] = slot.detected !== false;
+    }
+
+    renderBins(bins, layout, detectedById);
+    renderStatus(bins, detectedById);
 
     document.getElementById("last-updated").textContent =
-      "Updated: " + new Date().toLocaleTimeString();
+      "Updated " + new Date().toLocaleTimeString();
     document.getElementById("fps-display").textContent =
       (stats.fps || 0).toFixed(0) + " FPS";
-
   } catch (err) {
     console.error("Poll error:", err);
     document.getElementById("last-updated").textContent = "Connection lost";
   }
 }
 
-// ── Bin grid (grouped by layer) ─────────────────────
-function renderBins(bins, layout) {
+// ── Bins (slot-proportional grid) ───────────────────
+function renderBins(bins, layout, detectedById) {
   const container = document.getElementById("bins");
   container.innerHTML = "";
 
-  // Index live bin data by id for quick lookup per slot.
   const byId = {};
-  for (const bin of bins) byId[bin.id] = bin;
+  for (const b of bins) byId[b.id] = b;
 
   const layers = (layout && layout.layers) || [];
-
   if (layers.length === 0) {
-    container.innerHTML = '<div class="no-hands">No bins detected yet</div>';
+    container.innerHTML = '<div class="bin-missing">No bins yet — press 1 to calibrate, 2 to load the kit</div>';
     return;
   }
 
@@ -83,184 +84,143 @@ function renderBins(bins, layout) {
 
     const grid = document.createElement("div");
     grid.className = "layer-grid";
-    // Lay the row out as a slot track; each bin spans its declared slots.
     grid.style.gridTemplateColumns = "repeat(" + Math.max(layer.row_slots, 1) + ", 1fr)";
 
     for (const slot of layer.bins) {
-      const boxEl = makeBinBox(slot.id, byId[slot.id]);
-      boxEl.style.gridColumn = (slot.slot_start + 1) + " / span " + slot.span;
-      grid.appendChild(boxEl);
+      const tile = makeBinTile(slot.id, byId[slot.id], slot.detected !== false);
+      tile.style.gridColumn = (slot.slot_start + 1) + " / span " + slot.span;
+      grid.appendChild(tile);
     }
-
     row.appendChild(grid);
     container.appendChild(row);
   }
 }
 
-function makeBinBox(binId, bin) {
+function makeBinTile(binId, b, detected) {
   const box = document.createElement("div");
 
-  // Slot in the layout but no live data yet → render as a grey placeholder.
-  if (!bin) {
-    box.className = "bin grey";
-    box.innerHTML = '<div class="bin-id">' + binId + '</div>'
-                  + makeOverrideControls(binId);
-    wireOverrideControls(box, binId);
+  if (!detected) {
+    box.className = "bin missing";
+    box.innerHTML = '<div class="bin-missing">MISSING BIN</div>';
+    return box;
+  }
+  if (!b) {
+    box.className = "bin not_in_bom";
+    box.innerHTML = '<div class="bin-id">' + binId + '</div>';
     return box;
   }
 
-  const status = String(bin.status).trim().toLowerCase();
-  box.className = "bin " + status;
+  const status = binStatus(b, detected);
+  const wrong = isWrongBin(b, status);
+  box.className = "bin " + status + (wrong ? " wrong" : "");
 
-  let inner = '<div class="bin-id">' + bin.id + '</div>';
+  const label = b.label || b.id;
+  let inner = '<div class="bin-id">' + label + '</div>';
 
-  if (status !== "grey") {
-    if (bin.total > 0) {
-      inner += '<div class="quantity">' + bin.current + '/' + bin.total + '</div>';
-    } else {
-      inner += '<div class="quantity">' + bin.current + '</div>';
-    }
-    if (bin.weight) {
-      inner += '<div class="bin-weight">' + Math.round(bin.weight) + 'g</div>';
-    }
-  } else {
-    inner += '<div class="quantity">' + bin.current + '</div>';
+  if (status !== "not_in_bom") {
+    const cur = status === "overpick"
+      ? '<span class="over">' + b.current + '</span>'
+      : String(b.current);
+    inner += '<div class="quantity">' + cur + '/' + b.total + '</div>';
   }
 
-  if (bin.is_active && bin.handedness) {
-    inner += '<div class="bin-badge" style="background:#3b82f6;color:#fff;">'
-           + bin.handedness.toUpperCase() + '</div>';
+  if (b.is_active && b.handedness) {
+    // Place the flag on the side the hand should approach from: left hand → left.
+    const side = b.handedness[0].toLowerCase() === "l" ? "hand-left" : "hand-right";
+    inner += '<div class="hand-flag ' + side + '">✋ ' + b.handedness[0].toUpperCase() + '</div>';
   }
+  if (wrong) inner += '<div class="cross"></div>';
 
-  inner += makeOverrideControls(bin.id);
-
+  inner += makeOverrideControls(b.id);
   box.innerHTML = inner;
-  wireOverrideControls(box, bin.id);
+  wireOverrideControls(box, b.id);
   return box;
 }
 
-// ── Manual load-cell override controls ──────────────
+// ── Manual override (load-cell stand-in) ────────────
 function makeOverrideControls(binId) {
-  return (
-    '<div class="bin-override" data-bin-id="' + binId + '">' +
-      '<button class="ov-btn ov-minus" title="Decrement pick count">−</button>' +
-      '<button class="ov-btn ov-plus" title="Increment pick count">+</button>' +
-    '</div>'
-  );
+  return '<div class="bin-override" data-bin-id="' + binId + '">' +
+    '<button class="ov-btn ov-minus" title="Decrement">−</button>' +
+    '<button class="ov-btn ov-plus" title="Increment">+</button>' +
+    '</div>';
 }
-
 function wireOverrideControls(box, binId) {
   const minus = box.querySelector(".ov-minus");
   const plus  = box.querySelector(".ov-plus");
-  if (minus) minus.addEventListener("click", function(e) {
-    e.stopPropagation();
-    overridePick(binId, -1);
-  });
-  if (plus) plus.addEventListener("click", function(e) {
-    e.stopPropagation();
-    overridePick(binId, +1);
-  });
+  if (minus) minus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, -1); });
+  if (plus)  plus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, +1); });
 }
-
 async function overridePick(binId, delta) {
   try {
     const res = await fetch("/api/bins/" + encodeURIComponent(binId) + "/pick", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delta: delta }),
+      body: JSON.stringify({ delta }),
     });
-    if (!res.ok) {
-      console.warn("Override failed:", binId, delta, res.status);
-      return;
+    if (res.ok) poll();
+  } catch (err) { console.error("Override error:", err); }
+}
+
+// ── Status bar + Complete button ────────────────────
+function renderStatus(bins, detectedById) {
+  const bar = document.getElementById("statusbar");
+  const msgEl = document.getElementById("status-msg");
+  const completeBtn = document.getElementById("complete-btn");
+
+  const wrong = [];
+  const over = [];
+  const inJob = [];
+  let pickNext = null;
+
+  for (const b of bins) {
+    const detected = detectedById[b.id] !== false;
+    const s = binStatus(b, detected);
+    if (s === "missing" || s === "not_in_bom") continue;
+    inJob.push(b);
+    const label = b.label || b.id;
+    if (isWrongBin(b, s)) wrong.push(label);
+    if (s === "overpick") over.push({ label, n: b.current - b.total });
+    if (s === "incomplete") {
+      const left = b.total - b.current;
+      if (pickNext === null || left > pickNext.left) pickNext = { label, left };
     }
-    // Refresh immediately so the operator sees the change without waiting for the next poll.
-    poll();
-  } catch (err) {
-    console.error("Override error:", err);
-  }
-}
-
-// ── FSM state ───────────────────────────────────────
-function renderFSM(fsm) {
-  const display = FSM_DISPLAY[fsm.state] || FSM_DISPLAY.idle;
-  const label = document.getElementById("fsm-label");
-  const binEl = document.getElementById("fsm-bin");
-  const elapsedEl = document.getElementById("fsm-elapsed");
-
-  // Remove all fsm-* classes, add the current one
-  label.className = "";
-  label.classList.add(display.css);
-  label.textContent = display.label;
-
-  binEl.textContent = fsm.bin_id ? ("Bin: " + fsm.bin_id) : "";
-  elapsedEl.textContent = fsm.elapsed > 0 ? (fsm.elapsed.toFixed(1) + "s") : "";
-
-  // Gate dots
-  const dots = ["gate-1", "gate-2", "gate-3"];
-  for (let i = 0; i < 3; i++) {
-    const dot = document.getElementById(dots[i]);
-    dot.className = "gate-dot";
-    const g = display.gates[i];
-    if (g === 2) dot.classList.add("passed");
-    else if (g === 1) dot.classList.add("current");
-    else if (g === -1) dot.classList.add("failed");
-  }
-}
-
-// ── Hand cards ──────────────────────────────────────
-function renderHands(hands) {
-  const container = document.getElementById("hands");
-  container.innerHTML = "";
-
-  if (hands.length === 0) {
-    container.innerHTML = '<div class="no-hands">No hands detected</div>';
-    return;
   }
 
-  for (const hand of hands) {
-    const card = document.createElement("div");
-    card.className = "hand-card";
+  const allDone = inJob.length > 0 && inJob.every(b => b.current === b.total);
 
-    const grabClass = hand.is_grabbing ? "grabbing" : "open";
-    const grabText  = hand.is_grabbing ? "GRABBING" : "OPEN";
-
-    card.innerHTML =
-      '<div class="hand-label">' + hand.handedness + ' hand</div>' +
-      '<div class="hand-detail">Position: (' +
-        Math.round(hand.x) + ', ' + Math.round(hand.y) + ')</div>' +
-      '<div class="hand-detail">Bin: ' +
-        (hand.assigned_bin || '—') + '</div>' +
-      '<div>' +
-        '<span class="hand-grab ' + grabClass + '">' + grabText +
-        ' (' + (hand.grab_score * 100).toFixed(0) + '%)</span>' +
-      '</div>';
-
-    container.appendChild(card);
+  let message, mode;
+  if (!inJob.length) {
+    message = "Waiting for calibration…"; mode = "";
+  } else if (wrong.length) {
+    message = "REMOVE HAND FROM BIN " + wrong[0]; mode = "action";
+  } else if (over.length) {
+    const o = over[0];
+    message = "RETURN " + o.n + " ITEM" + (o.n === 1 ? "" : "S") + " TO BIN " + o.label; mode = "action";
+  } else if (pickNext) {
+    message = "PICK " + pickNext.left + " FROM BIN " + pickNext.label; mode = "";
+  } else {
+    message = "ALL BINS COMPLETE — READY TO CLOSE"; mode = "ready";
   }
+
+  msgEl.textContent = message;
+  bar.className = "statusbar" + (mode ? " " + mode : "");
+  completeBtn.classList.toggle("hidden", !(allDone && !wrong.length && !over.length));
 }
 
-// ── Stats ───────────────────────────────────────────
-function renderStats(stats) {
-  document.getElementById("stat-frames").textContent =
-    (stats.frame_count || 0).toLocaleString();
-  document.getElementById("stat-uptime").textContent =
-    formatUptime(stats.uptime_seconds || 0);
-  document.getElementById("stat-bins").textContent = stats.num_bins || 0;
-  document.getElementById("stat-hands").textContent = stats.num_hands || 0;
+// ── Confirm-kit flow (wired once) ───────────────────
+function initCompleteFlow() {
+  const btn = document.getElementById("complete-btn");
+  const modal = document.getElementById("confirm-modal");
+  btn.addEventListener("click", () => { if (!btn.classList.contains("hidden")) modal.classList.remove("hidden"); });
+  document.getElementById("confirm-cancel").addEventListener("click",
+    () => modal.classList.add("hidden"));
+  document.getElementById("confirm-proceed").addEventListener("click", () => {
+    // TODO(backend): no /api/kit/complete endpoint yet — close for now.
+    modal.classList.add("hidden");
+  });
 }
 
-function formatUptime(seconds) {
-  if (seconds < 60) return Math.floor(seconds) + "s";
-  if (seconds < 3600) return Math.floor(seconds / 60) + "m " + (Math.floor(seconds) % 60) + "s";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return h + "h " + m + "m";
-}
-
-// A hand in a not-in-use bin (status "wrong_bin") lights up that bin directly
-// via the .bin.wrong_bin CSS glow — no full-screen overlay. The illumination
-// clears the instant the hand leaves, since status is recomputed every poll.
-
-// ── Start polling ───────────────────────────────────
+// ── Start ───────────────────────────────────────────
+initCompleteFlow();
 poll();
 setInterval(poll, POLL_INTERVAL);
