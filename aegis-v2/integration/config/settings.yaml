@@ -9,7 +9,7 @@ camera:
   warmup_frames: 30               # frames discarded before the init snapshot so
                                   # exposure/focus settle (USB cams need this; raise
                                   # if the Logitech still detects nothing)
-  rotate_180: true                # rotate every frame 180° to match the rig mount
+  rotate_180: false                # rotate every frame 180° to match the rig mount
 
 # --- Bin Boundary Detector (from cv-models) ------
 bin_detector:
