@@ -64,6 +64,32 @@ bin_assignment:
   # top bin. Off → assign() behaves exactly as before.
   occlusion_gate:
     enabled: true
+    # Foreground-evidence mode (recommended for a fixed camera + stable scene).
+    # When present, a top-bin hit is confirmed against real foreground at the
+    # fingertip: a hand occluded under the shelf leaves no foreground up top, so
+    # the hit is reassigned to the bin below. Until the model has warmed up, the
+    # gate falls back to its landmark heuristic. Remove this block to use the
+    # landmark heuristic only. See docs/superpowers/specs/2026-06-22-foreground-occlusion-gate-design.md
+    foreground:
+      present_ratio: 0.20   # min foreground fraction in the fingertip patch for a real hand
+      patch_size: 41        # px window around the claimed fingertip
+      warmup_frames: 30     # frames before the model is trusted
+      history: 500          # MOG2 history
+      var_threshold: 16     # MOG2 variance threshold
+
+  # Occlusion hold: keeps a BOTTOM bin highlighted while the hand that was picking
+  # from it is hidden under the shelf (visual continuity only — no count effect).
+  # The last assignment taken while the hand was still visible is frozen and held;
+  # a phantom extrapolated hand does NOT release it — only a genuinely visible hand
+  # (foreground returns) does. occlusion_ratio is a SEPARATE, stricter floor than
+  # the gate's present_ratio: a fingertip is "occluded" only when its foreground
+  # fraction is below it (truly under the shelf), so a weakly-visible real hand is
+  # not falsely frozen. See docs/superpowers/specs/2026-06-22-present-ratio-occlusion-hold-design.md
+  occlusion_hold:
+    enabled: true
+    occlusion_ratio: 0.05   # fingertip foreground floor; below = occluded (latch/release)
+    occupancy_ratio: 0.05   # bottom-bin foreground floor; the hold releases once the
+                            # bin region falls below it (the forearm left the bin)
 
 # --- Work Order (target pick counts) -------------
 # Predetermined target quantity for each bin, shown in the dashboard as

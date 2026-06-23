@@ -37,7 +37,8 @@ sys.path.insert(0, str(_ROOT))         # integration/
 # launched from any working directory.
 _DEFAULT_CONFIG = str(_ROOT / "integration" / "config" / "settings.yaml")
 
-from integration.src.engine import BinAssignmentEngine, BinRegion
+from integration.src.engine import BinAssignmentEngine, BinRegion, OcclusionHold
+from integration.src.detectors.foreground import ForegroundModel
 from integration.src.sensing import LoadCellReader
 from integration.src.ui.overlay import OverlayUI
 from integration.src.ui.state import PipelineState
@@ -97,6 +98,11 @@ class Pipeline:
         self._manual: bool = False                # manual-layout fallback active?
         self._hand_tracker: Optional[BaseHandTracker] = None
         self._assignment: Optional[BinAssignmentEngine] = None
+        self._foreground: Optional[ForegroundModel] = None  # occlusion-gate oracle
+        self._fg_present_ratio: float = 0.10                 # for the tuning overlay
+        self._hold: Optional[OcclusionHold] = None           # occlusion-hold layer
+        self._occlusion_ratio: float = 0.05                  # fingertip floor for hold
+        self._occupancy_ratio: float = 0.05                  # bottom-bin "forearm present" floor
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
         self._inventory = None                    # InventoryTracker (built with load cells)
@@ -363,6 +369,35 @@ class Pipeline:
         self._assignment = BinAssignmentEngine(assign_cfg)
         self._assignment.set_bin_map_from_geofences(self._geofences)
 
+        # Foreground-evidence oracle for the occlusion gate. Built only when the
+        # gate's foreground mode is configured; otherwise the gate uses its
+        # landmark heuristic. See foreground.py / the 2026-06-22 design doc.
+        gate_cfg = (assign_cfg.get("occlusion_gate", {}) or {})
+        fg_cfg = gate_cfg.get("foreground")
+        if gate_cfg.get("enabled", True) and fg_cfg is not None:
+            self._fg_present_ratio = fg_cfg.get("present_ratio", 0.10)
+            self._foreground = ForegroundModel(
+                patch_size=fg_cfg.get("patch_size", 41),
+                warmup_frames=fg_cfg.get("warmup_frames", 30),
+                history=fg_cfg.get("history", 500),
+                var_threshold=fg_cfg.get("var_threshold", 16.0),
+            )
+            logger.info("Occlusion gate: foreground-evidence mode enabled "
+                        "(patch=%d, warmup=%d)",
+                        self._foreground._patch, self._foreground._warmup)
+
+        # Occlusion hold — keeps the bottom bin lit while a hand is hidden under
+        # the shelf (visual continuity). Eligible bins are the detected bottom row.
+        hold_cfg = (assign_cfg.get("occlusion_hold", {}) or {})
+        if hold_cfg.get("enabled", True):
+            self._occlusion_ratio = hold_cfg.get("occlusion_ratio", 0.05)
+            self._occupancy_ratio = hold_cfg.get("occupancy_ratio", 0.05)
+            self._hold = OcclusionHold(hold_cfg)
+            self._hold.set_eligible_bins(self._assignment.bottom_bin_ids())
+            logger.info("Occlusion hold enabled (occlusion_ratio=%.2f, eligible=%s)",
+                        self._occlusion_ratio,
+                        sorted(self._assignment.bottom_bin_ids()) or "none")
+
     def _create_overlay(self) -> None:
         """Build the OpenCV overlay renderer from the current geofences.
 
@@ -457,6 +492,8 @@ class Pipeline:
         present = {bid: c for bid, c in geofences.items() if c.get("detected", True)}
         if self._assignment is not None:
             self._assignment.set_bin_map_from_geofences(present)
+            if self._hold is not None:
+                self._hold.set_eligible_bins(self._assignment.bottom_bin_ids())
         self._rebuild_overlay(geofences)
         if apply_work_order:
             self._apply_work_order()
@@ -464,10 +501,12 @@ class Pipeline:
     # ── Stage 2: Sense → Analyse → Act loop ──────────────────
 
     def _main_loop(self) -> None:
-        logger.info("Entering Sense-Analyse-Act loop (press 'q' to quit)...")
+        logger.info("Entering Sense-Analyse-Act loop (press 'q' to quit, "
+                    "'m' to toggle the foreground tuning view)...")
         frame_count = 0
         t0 = time.time()
         show_overlay = self._overlay is not None
+        show_fg = False  # 'm' toggles the foreground "model's-eye" tuning view
 
         if show_overlay:
             cv2.namedWindow("AEGIS v2 — Bin Tracker", cv2.WINDOW_NORMAL)
@@ -480,14 +519,67 @@ class Pipeline:
                 frame = cv2.rotate(frame, cv2.ROTATE_180)
 
             hands = self._hand_tracker.detect(frame)
-            events = self._assignment.assign(hands, frame.shape)
+
+            # Feed the foreground model every frame; once warmed, hand it to the
+            # occlusion gate as a presence oracle over the current frame's mask.
+            presence_fn = None
+            if self._foreground is not None:
+                mask = self._foreground.update(frame)
+                if self._foreground.ready:
+                    presence_fn = lambda px, py: self._foreground.patch_ratio(mask, px, py)
+
+            events = self._assignment.assign(hands, frame.shape, presence_fn)
+
+            # Occlusion hold: keep a bottom bin lit while its hand is hidden under
+            # the shelf. A handedness is "occluded" when its fingertip has almost
+            # no foreground (below occlusion_ratio) — a genuine occlusion, not a
+            # weakly-visible hand. Without a presence oracle the set is empty and
+            # the hold degrades to absence-only latching.
+            if self._hold is not None:
+                occluded_ids = set()
+                occupied_bins = None
+                if presence_fn is not None:  # foreground model is warmed up
+                    for ev in events:
+                        if ev.hand_point is None:
+                            continue
+                        if presence_fn(ev.hand_point[0], ev.hand_point[1]) < self._occlusion_ratio:
+                            occluded_ids.add(ev.hand_id)
+                    # Which bottom bins still have a forearm in them (real foreground)?
+                    occupied_bins = set()
+                    for bid in self._assignment.bottom_bin_ids():
+                        c = self._geofences.get(bid)
+                        if c is None:
+                            continue
+                        if self._foreground.region_ratio(
+                            mask, c["x_min"], c["y_min"], c["x_max"], c["y_max"]
+                        ) >= self._occupancy_ratio:
+                            occupied_bins.add(bid)
+                    # If a visible fingertip is above a bottom bin (hand in a top
+                    # bin OR emerged above the rack), the forearm is only transiting
+                    # that bin — don't let it be held. Occluded tips are excluded so
+                    # genuine under-shelf reaches still hold.
+                    occupied_bins -= self._assignment.bottom_bins_with_hand_above(
+                        events, occluded_ids)
+                events = self._hold.apply(events, hands, occluded_ids, occupied_bins)
 
             self._state.update_hands(hands, events)
             active_ids = {ev.bin_id for ev in events if ev.bin_id is not None}
             self._state.update_bins(self._geofences, active_ids)
 
             if show_overlay:
-                display = self._overlay.render(frame, hands, events)
+                if show_fg and self._foreground is not None:
+                    samples = [
+                        (ev.hand_point[0], ev.hand_point[1],
+                         self._foreground.patch_ratio(
+                             mask, ev.hand_point[0], ev.hand_point[1]))
+                        for ev in events
+                        if ev.hand_point is not None and ev.method != "occlusion_hold"
+                    ]
+                    display = self._overlay.render_foreground_debug(
+                        mask, samples, self._fg_present_ratio,
+                        self._foreground.patch_size, self._foreground.ready)
+                else:
+                    display = self._overlay.render(frame, hands, events)
                 cv2.imshow("AEGIS v2 — Bin Tracker", display)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
@@ -496,6 +588,10 @@ class Pipeline:
                     self._calibrate_grid(frame)
                 elif key == ord("2"):
                     self._init_kit(frame)
+                elif key == ord("m"):
+                    show_fg = not show_fg
+                    logger.info("Foreground tuning view %s",
+                                "ON" if show_fg else "OFF")
 
             frame_count += 1
             if frame_count % 30 == 0:

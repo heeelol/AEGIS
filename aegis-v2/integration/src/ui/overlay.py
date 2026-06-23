@@ -88,6 +88,45 @@ class OverlayUI:
 
         return display
 
+    # ── Foreground tuning view ───────────────────────────────
+
+    def render_foreground_debug(
+        self,
+        mask: np.ndarray,
+        samples: list,
+        present_ratio: float,
+        patch_size: int,
+        ready: bool = True,
+    ) -> np.ndarray:
+        """The occlusion gate's "model's-eye" view, for tuning ``present_ratio``.
+
+        Shows the binary foreground mask (white = foreground the gate counts as a
+        hand) with faint bin outlines for reference. Each ``sample`` is a
+        ``(px, py, ratio)`` fingertip the gate evaluated: its patch window is
+        boxed and labelled with the measured ratio, green when it meets
+        ``present_ratio`` (kept on the top bin) or red when it does not (the hit
+        would be reassigned to the bin below / suppressed).
+        """
+        view = cv2.cvtColor((mask > 0).astype(np.uint8) * 255, cv2.COLOR_GRAY2BGR)
+
+        for region in self._bins:
+            x1, y1 = int(region.x_min), int(region.y_min)
+            x2, y2 = int(region.x_max), int(region.y_max)
+            cv2.rectangle(view, (x1, y1), (x2, y2), (70, 70, 70), 1)
+
+        half = int(patch_size) // 2
+        for px, py, ratio in samples:
+            x, y = int(px), int(py)
+            color = (0, 200, 0) if ratio >= present_ratio else (0, 0, 255)
+            cv2.rectangle(view, (x - half, y - half), (x + half, y + half), color, 2)
+            cv2.putText(view, f"{ratio:.2f}", (x - half, y - half - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        status = "FG MASK" if ready else "FG MASK (warming up)"
+        cv2.putText(view, f"{status}  present_ratio={present_ratio:.2f}  [m] toggle",
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        return view
+
     # ── Bin rendering ────────────────────────────────────────
 
     def _draw_bins(self, img: np.ndarray, active_ids: set[str]) -> None:

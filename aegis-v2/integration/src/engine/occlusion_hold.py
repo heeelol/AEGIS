@@ -1,20 +1,26 @@
 """
 Occlusion Hold
 ==============
-Keeps an eligible (bottom-layer) bin marked **active** while the hand that was
-picking from it is hidden under the rack lip and the hand tracker has lost sight
-of it. The stateless :class:`BinAssignmentEngine` drops the bin the instant the
-hand disappears; this stateful layer bridges that gap.
+Keeps an eligible (bottom-layer) bin marked **active** while the hand picking from
+it is hidden under the rack lip and the stateless :class:`BinAssignmentEngine`
+drops it. This stateful layer bridges that gap for visual continuity only — it
+does not affect counts.
 
-A hold is keyed by **handedness** (one left, one right): when a hand is assigned
-to an eligible bin it is remembered, and while that handedness is no longer seen
-the bin keeps emitting an active event. The hold ends the moment that handedness
-is seen again — there is **no timeout** (a bin can stay lit if the operator walks
-away; clear it from the dashboard if needed).
+Bin-keyed, **handedness-independent**. MediaPipe's left/right label is unreliable
+on an occluded/extrapolated hand (it flips), so keying a hold by handedness
+produces stuck phantom holds. Instead a *bin* is held while:
 
-This complements — and is distinct from — the *occlusion gate* inside
-``BinAssignmentEngine``, which rewrites a single extrapolated fingertip; the hold
-deals with the hand vanishing entirely.
+  1. it has been **visibly picked** (a genuine, non-occluded in-bin assignment
+     armed it), and
+  2. it is still **occupied** — real foreground (a forearm) is in the bin region.
+
+Occluded fingertip events (the extrapolated tips with no foreground behind them)
+are dropped as unreliable, so they never light a bin or leave a stray 0.0 marker;
+the occupancy-confirmed hold lights the bin instead. A hold releases the instant
+its bin region goes background (the forearm left).
+
+This complements the *occlusion gate* in ``BinAssignmentEngine`` (which rewrites a
+single extrapolated fingertip); the hold deals with the bin's continuity over time.
 """
 from __future__ import annotations
 
@@ -26,7 +32,7 @@ logger = logging.getLogger("aegis.engine.occlusion_hold")
 
 
 class OcclusionHold:
-    """Stateful hold over eligible bins. Call :meth:`apply` every frame."""
+    """Stateful per-bin hold. Call :meth:`apply` every frame."""
 
     def __init__(self, config: dict | None = None):
         config = config or {}
@@ -34,54 +40,67 @@ class OcclusionHold:
         # None → pipeline auto-detects the bottom row; otherwise explicit rows.
         self.eligible_rows = config.get("eligible_rows")
         self._eligible_bins: set[str] = set()
-        # handedness -> the BinEvent that established the hold.
-        self._holds: dict[str, BinEvent] = {}
+        # bin_id -> the event that last armed it (a genuine in-bin pick); used as
+        # the template for the synthetic hold event.
+        self._armed: dict[str, BinEvent] = {}
 
     def set_eligible_bins(self, bin_ids: set[str]) -> None:
-        """Set which bin ids may be held. Holds on no-longer-eligible bins drop."""
+        """Set which bin ids may be held. Drops arms on no-longer-eligible bins."""
         self._eligible_bins = set(bin_ids)
-        for handed in [h for h, ev in self._holds.items()
-                       if ev.bin_id not in self._eligible_bins]:
-            del self._holds[handed]
+        for bid in [b for b in self._armed if b not in self._eligible_bins]:
+            del self._armed[bid]
 
-    def apply(self, events: list[BinEvent], hands: list) -> list[BinEvent]:
+    def apply(
+        self,
+        events: list[BinEvent],
+        hands: list,
+        occluded_ids: set[int] | None = None,
+        occupied_bins: set[str] | None = None,
+    ) -> list[BinEvent]:
         """Augment this frame's events with held bins.
 
-        - A hand currently in an eligible bin (re)arms a hold for its handedness.
-        - A hand seen again (its handedness present) but not in its held bin ends
-          the hold.
-        - While a held handedness is absent, a synthetic ``occlusion_hold`` event
-          keeps the bin active.
+        ``occluded_ids`` are the ``hand_id``s whose fingertip is occluded this
+        frame (foreground ratio below ``occlusion_ratio``). Their events are
+        dropped as unreliable extrapolations.
+
+        ``occupied_bins`` are the eligible bins that still have real foreground (a
+        forearm reaching in) — the authoritative "is the hand still there" signal.
+        When ``None`` (no foreground model / warming up) occupancy release is
+        skipped.
         """
         if not self._enabled:
             return events
+        occluded_ids = occluded_ids or set()
 
-        present_handed = {getattr(h, "handedness", "") for h in hands}
-
+        # 1. Arm bins from genuine (non-occluded) in-bin picks.
         for ev in events:
+            if ev.hand_id in occluded_ids:
+                continue
             if ev.bin_id is not None and ev.bin_id in self._eligible_bins:
-                # Actively picking an eligible bin → arm/refresh the hold.
-                self._holds[ev.handedness] = ev
-            elif ev.handedness in self._holds and ev.handedness in present_handed:
-                # Hand is back in view but no longer in its held bin → release.
-                logger.info("Occlusion hold released for %s hand (seen again)", ev.handedness)
-                del self._holds[ev.handedness]
+                self._armed[ev.bin_id] = ev
 
-        result = list(events)
-        active_bins = {ev.bin_id for ev in events if ev.bin_id is not None}
-        for handed, held in self._holds.items():
-            if handed in present_handed:
-                continue  # hand visible this frame; its own event covers the bin
-            if held.bin_id in active_bins:
-                continue  # bin already active via another hand/event
+        # 2. Release armed bins whose forearm has left (region went background).
+        if occupied_bins is not None:
+            for bid in [b for b in self._armed if b not in occupied_bins]:
+                logger.info("Occlusion hold released bin %s (empty)", bid)
+                del self._armed[bid]
+
+        # 3. Drop unreliable occluded fingertip events (the stray 0.0 markers).
+        result = [ev for ev in events if ev.hand_id not in occluded_ids]
+
+        # 4. Keep each armed bin lit while no live event currently covers it.
+        active = {ev.bin_id for ev in result if ev.bin_id is not None}
+        for bid, tmpl in self._armed.items():
+            if bid in active:
+                continue
             result.append(BinEvent(
-                hand_id=held.hand_id,
-                handedness=held.handedness,
-                bin_id=held.bin_id,
-                bin_label=held.bin_label,
-                hand_point=held.hand_point,
-                hand_area=held.hand_area,
-                confidence=held.confidence,
+                hand_id=tmpl.hand_id,
+                handedness=tmpl.handedness,
+                bin_id=bid,
+                bin_label=tmpl.bin_label,
+                hand_point=tmpl.hand_point,
+                hand_area=tmpl.hand_area,
+                confidence=tmpl.confidence,
                 method="occlusion_hold",
             ))
         return result
