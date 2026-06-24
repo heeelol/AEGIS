@@ -39,7 +39,7 @@ _DEFAULT_CONFIG = str(_ROOT / "integration" / "config" / "settings.yaml")
 
 from integration.src.engine import BinAssignmentEngine, BinRegion, OcclusionHold
 from integration.src.detectors.foreground import ForegroundModel
-from integration.src.sensing import LoadCellReader
+from integration.src.sensing import LoadCellReader, PlacementTracker
 from integration.src.ui.overlay import OverlayUI
 from integration.src.ui.state import PipelineState
 
@@ -106,6 +106,7 @@ class Pipeline:
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
         self._inventory = None                    # InventoryTracker (built with load cells)
+        self._placement: Optional[PlacementTracker] = None  # kitting-box placement counting
         self._geofences: dict = {}
         self._rotate_180: bool = bool(
             self._config.get("camera", {}).get("rotate_180", False))
@@ -331,30 +332,70 @@ class Pipeline:
         self._loadcells = LoadCellReader(lc_cfg)
         from integration.src.sensing import InventoryTracker
         self._inventory = InventoryTracker()        # loads config/inventory.yaml
+
+        # Kitting-box placement tracker (3-load-receptor demo). Counts items as
+        # they land in the box; the BOM source bins + their unit weights come
+        # from inventory.yaml, targets from the work order, box id/tolerance from
+        # the loadcells.kit_box config block.
+        units = self._inventory.units()
+        box_cfg = lc_cfg.get("kit_box", {}) or {}
+        bom_targets = {b: self._target_for(b) for b in units}
+        self._placement = PlacementTracker(
+            units, bom_targets,
+            box_cfg.get("box_id", "kit_box"),
+            box_cfg.get("tolerance_g"),
+        )
+        self._placement.tare(self._loadcells.get_weights())  # software zero at boot
+
         layout = self._loadcells.get_layout()
         self._state.update_loadcells(layout, self._loadcells.get_weights())
         self._apply_loadcell_counts()
         if self._loadcells.is_connected():
-            logger.info("Load cells connected: %d layer(s)", layout.num_layers)
+            logger.info("Load cells connected: %d layer(s); kitting box=%s, "
+                        "BOM bins=%s, expected box total=%.1f g",
+                        layout.num_layers, self._placement.box_id,
+                        sorted(units), self._placement.expected_grams)
         else:
             logger.info("Load cells not connected (stub) — layout from CV only")
 
-    def _apply_loadcell_counts(self) -> None:
-        """Drive mapped bins' pick counts from the latest load-cell weights.
+    def _target_for(self, bin_id: str) -> int:
+        """Work-order target for a bin id, parsed from work_order.targets grid."""
+        targets = (self._config.get("work_order", {}) or {}).get("targets") or []
+        row, col = PipelineState._parse_bin_id(bin_id)
+        try:
+            return int(targets[row][col])
+        except (IndexError, TypeError, ValueError):
+            return 0
 
-        Authoritative for inventory-mapped bins while the cell is connected;
-        the connected-guard in ``derive_pick_counts`` leaves counts alone when
-        the link drops. Bins absent from inventory.yaml are never touched.
+    def _apply_loadcell_counts(self) -> None:
+        """Drive BOM-bin pick counts from the kitting box (placement-driven).
+
+        A bin's count is how many of its items the box currently holds, not how
+        many left the bin — the counter only moves on placement. Connected-guard:
+        a dropped link leaves counts alone. When the UI requests "complete kit",
+        all receptors are re-tared so the next kit starts from zero.
         """
-        if self._loadcells is None or self._inventory is None:
+        if self._loadcells is None or self._placement is None:
             return
-        counts = derive_pick_counts(
-            self._loadcells.get_weights(),
-            self._inventory,
-            self._loadcells.is_connected(),
-        )
-        for bin_id, count in counts.items():
+        if not self._loadcells.is_connected():
+            return
+        weights = self._loadcells.get_weights()
+        if self._state.consume_complete_request():
+            self._placement.tare(weights)
+        kit = self._placement.update(weights)
+        for bin_id, count in kit.placed.items():
             self._state.set_pick_count(bin_id, count)
+        self._state.update_kit({
+            "placed": kit.placed,
+            "removed": kit.removed,
+            "box_grams": kit.box_grams,
+            "expected_grams": kit.expected_grams,
+            "targets": kit.targets,
+            "complete": kit.complete,
+            "state": kit.state,
+            "overpick": kit.overpick,
+            "box_id": self._placement.box_id,
+        })
 
     def _load_hand_tracker(self) -> None:
         ht_cfg = self._config.get("hand_tracker", {})

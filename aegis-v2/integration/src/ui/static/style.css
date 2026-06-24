@@ -301,3 +301,43 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ── Kitting box (3rd load receptor) ────────────────── */
+.kitbox-zone { flex: 0 0 auto; margin-top: 16px; }
+.kitbox {
+  display: grid; grid-template-columns: auto 1fr; align-items: center;
+  gap: 10px 18px;
+  background: var(--steel); border: 1px solid var(--rule); border-radius: 9px;
+  padding: 14px 18px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.kitbox.offline { color: var(--ink-faint); grid-template-columns: 1fr; }
+.kit-empty { font-size: 12px; letter-spacing: 1px; }
+.kit-state {
+  grid-row: 1 / span 2; grid-column: 1;
+  font-family: var(--mono); font-weight: 700; font-size: 13px;
+  letter-spacing: 1px; color: var(--ink-dim);
+  padding-right: 18px; border-right: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.kit-lines { grid-column: 2; display: flex; gap: 22px; flex-wrap: wrap; }
+.kit-line { display: flex; gap: 8px; align-items: baseline; }
+.kit-bin { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.kit-count { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--ink); }
+.kit-line.done .kit-count { color: var(--green); }
+.kit-line.over .kit-count { color: var(--alert); }
+.kit-weight { grid-column: 2; display: flex; align-items: center; gap: 12px; }
+.kit-bar {
+  flex: 1 1 auto; height: 8px; border-radius: 5px;
+  background: var(--void); border: 1px solid var(--rule); overflow: hidden;
+}
+.kit-bar span { display: block; height: 100%; background: var(--amber); transition: width 0.25s ease; }
+.kit-grams { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); white-space: nowrap; }
+/* State accents */
+.kitbox.state-picking { border-color: var(--rule-hi); }
+.kitbox.state-picking .kit-state { color: var(--amber); }
+.kitbox.state-overpick { border-color: var(--alert); background: var(--alert-dim); }
+.kitbox.state-overpick .kit-state { color: var(--alert); }
+.kitbox.state-kit_complete { border-color: var(--green); background: linear-gradient(var(--green-dim), rgba(43,212,110,0.16)); }
+.kitbox.state-kit_complete .kit-state { color: var(--green); }
+.kitbox.state-kit_complete .kit-bar span { background: var(--green); }

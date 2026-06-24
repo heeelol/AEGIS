@@ -72,6 +72,12 @@ class PipelineState:
         self._loadcell_layout: LayerLayout = LayerLayout()
         self._loadcell_weights: dict[str, float] = {}
 
+        # Kitting-box (3-load-receptor demo): latest snapshot from the placement
+        # tracker, plus a one-shot "complete kit" request raised by the UI and
+        # consumed by the pipeline (which re-tares the receptors for the next kit).
+        self._kit: dict = {}
+        self._complete_requested: bool = False
+
     # ── Writers (called by the pipeline loop) ────────────────
 
     def update_bins(self, geofences: dict, active_bin_ids: set[str] | None = None) -> None:
@@ -179,6 +185,23 @@ class PipelineState:
             if weights is not None:
                 self._loadcell_weights = dict(weights)
 
+    def update_kit(self, kit: dict) -> None:
+        """Store the latest kitting-box snapshot (called by the pipeline)."""
+        with self._lock:
+            self._kit = dict(kit)
+
+    def request_complete(self) -> None:
+        """UI asks to close the current kit (one-shot; consumed by the pipeline)."""
+        with self._lock:
+            self._complete_requested = True
+
+    def consume_complete_request(self) -> bool:
+        """Pipeline checks/clears the close-kit request. True if one was pending."""
+        with self._lock:
+            pending = self._complete_requested
+            self._complete_requested = False
+            return pending
+
     # ── Readers (called by FastAPI endpoints) ────────────────
 
     def get_bins(self) -> list[dict]:
@@ -202,6 +225,11 @@ class PipelineState:
                     "weight": self._loadcell_weights.get(b.bin_id, 0.0),
                 })
             return result
+
+    def get_kit(self) -> dict:
+        """Latest kitting-box state for the dashboard (empty until load cells run)."""
+        with self._lock:
+            return dict(self._kit)
 
     def get_hands(self) -> list[dict]:
         with self._lock:

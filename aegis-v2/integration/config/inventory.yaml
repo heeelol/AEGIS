@@ -12,10 +12,14 @@ items:
   bolt_m6:   { unit_g: 13.9 }
   washer_m6: { unit_g: 1.1 }
   amp:       { unit_g: 3.8 }   # one AMP = 3.8 g (confirmed live 2026-06-17)
+  # 3-load-receptor demo items — distinct weights so box placements are attributable.
+  part_a:    { unit_g: 63.7 }  # bin_1_0
+  part_b:    { unit_g: 3.6 }   # bin_0_0
 
 bins:
-  # bin_id: item_name   (bin_id matches the load-cell keys, AFTER bin_remap,
-  # e.g. firmware bin_0_0 -> bin_0_5 via sensing.loadcells.bin_remap)
-  bin_0_0: bolt_m6
-  bin_0_5: amp
-  #bin_0_1: washer_m6
+  # bin_id: item_name   (bin_id matches the load-cell keys, AFTER bin_remap)
+  # --- 3-load-receptor kitting demo: the 2 BOM source bins ---
+  bin_1_0: part_a
+  bin_0_0: part_b
+  # The kitting box (kit_box) is the 3rd receptor; it is NOT an item bin —
+  # configured under sensing.loadcells.kit_box in settings.yaml.

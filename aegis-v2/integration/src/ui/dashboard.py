@@ -82,6 +82,20 @@ def create_app(state: Optional[PipelineState] = None) -> FastAPI:
                     "source": {"cv": False, "loadcells": False}}
         return _state.get_layout()
 
+    @app.get("/api/kit")
+    def get_kit():
+        """Return the kitting-box state (3-load-receptor demo). Empty until load cells run."""
+        if _state is None:
+            return {}
+        return _state.get_kit()
+
+    @app.post("/api/kit/complete")
+    def complete_kit():
+        """Operator closes the current kit; the pipeline re-tares for the next one."""
+        if _state:
+            _state.request_complete()
+        return {"status": "ok"}
+
     @app.get("/api/hands")
     def get_hands():
         """Return current hand detection data."""

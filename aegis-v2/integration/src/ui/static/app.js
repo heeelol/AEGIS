@@ -30,16 +30,18 @@ function isWrongBin(b, status) {
 // ── Main poll loop ──────────────────────────────────
 async function poll() {
   try {
-    const [binsRes, layoutRes, statsRes] = await Promise.all([
+    const [binsRes, layoutRes, statsRes, kitRes] = await Promise.all([
       fetch("/api/bins"),
       fetch("/api/layout"),
       fetch("/api/stats"),
+      fetch("/api/kit"),
     ]);
     if (!binsRes.ok) throw new Error("Backend error");
 
     const bins   = await binsRes.json();
     const layout = await layoutRes.json();
     const stats  = await statsRes.json();
+    const kit    = kitRes.ok ? await kitRes.json() : {};
 
     const detectedById = {};
     for (const layer of (layout.layers || [])) {
@@ -47,7 +49,8 @@ async function poll() {
     }
 
     renderBins(bins, layout, detectedById);
-    renderStatus(bins, detectedById);
+    renderKit(kit, bins);
+    renderStatus(bins, detectedById, kit);
 
     document.getElementById("last-updated").textContent =
       "Updated " + new Date().toLocaleTimeString();
@@ -161,8 +164,47 @@ async function overridePick(binId, delta) {
   } catch (err) { console.error("Override error:", err); }
 }
 
+// ── Kitting box (3rd load receptor) ─────────────────
+function prettyState(s) {
+  return ({ INIT: "Ready", PICKING: "Picking…", OVERPICK: "Over-picked",
+            KIT_COMPLETE: "Kit complete ✓" })[s] || s || "—";
+}
+function renderKit(kit) {
+  const el = document.getElementById("kitbox");
+  if (!kit || !kit.state) {
+    el.className = "kitbox offline";
+    el.innerHTML = '<div class="kit-empty">Load cells offline — connect the ESP32 (3 receptors)</div>';
+    return;
+  }
+  el.className = "kitbox state-" + String(kit.state).toLowerCase();
+
+  const placed = kit.placed || {};
+  const targets = kit.targets || {};
+  const over = kit.overpick || {};
+
+  let rows = "";
+  for (const binId of Object.keys(targets)) {
+    const p = placed[binId] || 0, t = targets[binId] || 0, o = over[binId] || 0;
+    const cls = o > 0 ? "over" : (t > 0 && p >= t ? "done" : "");
+    rows += '<div class="kit-line ' + cls + '">' +
+            '<span class="kit-bin">' + binId + '</span>' +
+            '<span class="kit-count">' + p + '/' + t + '</span></div>';
+  }
+
+  const bg = +(kit.box_grams || 0), eg = +(kit.expected_grams || 0);
+  const pct = eg > 0 ? Math.min(100, Math.round((100 * bg) / eg)) : 0;
+
+  el.innerHTML =
+    '<div class="kit-state">' + prettyState(kit.state) + '</div>' +
+    '<div class="kit-lines">' + rows + '</div>' +
+    '<div class="kit-weight">' +
+      '<div class="kit-bar"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="kit-grams">' + bg.toFixed(1) + ' / ' + eg.toFixed(1) + ' g</div>' +
+    '</div>';
+}
+
 // ── Status bar + Complete button ────────────────────
-function renderStatus(bins, detectedById) {
+function renderStatus(bins, detectedById, kit) {
   const bar = document.getElementById("statusbar");
   const msgEl = document.getElementById("status-msg");
   const completeBtn = document.getElementById("complete-btn");
@@ -198,13 +240,23 @@ function renderStatus(bins, detectedById) {
     message = "RETURN " + o.n + " ITEM" + (o.n === 1 ? "" : "S") + " TO BIN " + o.label; mode = "action";
   } else if (pickNext) {
     message = "PICK " + pickNext.left + " FROM BIN " + pickNext.label; mode = "";
+  } else if (kit && kit.state && !kit.complete) {
+    // Bins met their targets but the box weight hasn't confirmed yet.
+    const bg = (+kit.box_grams || 0).toFixed(0), eg = (+kit.expected_grams || 0).toFixed(0);
+    message = "VERIFY KITTING BOX — " + bg + " / " + eg + " g"; mode = "";
   } else {
     message = "ALL BINS COMPLETE — READY TO CLOSE"; mode = "ready";
   }
 
+  // Completion is authoritative from the kit FSM when load cells are live
+  // (both targets met AND box total matches); otherwise fall back to bin counts.
+  const kitComplete = (kit && kit.state)
+    ? !!kit.complete
+    : (allDone && !wrong.length && !over.length);
+
   msgEl.textContent = message;
   bar.className = "statusbar" + (mode ? " " + mode : "");
-  completeBtn.classList.toggle("hidden", !(allDone && !wrong.length && !over.length));
+  completeBtn.classList.toggle("hidden", !(kitComplete && !wrong.length));
 }
 
 // ── Confirm-kit flow (wired once) ───────────────────
@@ -214,9 +266,13 @@ function initCompleteFlow() {
   btn.addEventListener("click", () => { if (!btn.classList.contains("hidden")) modal.classList.remove("hidden"); });
   document.getElementById("confirm-cancel").addEventListener("click",
     () => modal.classList.add("hidden"));
-  document.getElementById("confirm-proceed").addEventListener("click", () => {
-    // TODO(backend): no /api/kit/complete endpoint yet — close for now.
+  document.getElementById("confirm-proceed").addEventListener("click", async () => {
+    // Close the kit: the backend re-tares all 3 receptors for the next run.
+    try {
+      await fetch("/api/kit/complete", { method: "POST" });
+    } catch (err) { console.error("Complete error:", err); }
     modal.classList.add("hidden");
+    poll();
   });
 }
 
