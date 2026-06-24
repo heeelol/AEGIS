@@ -122,13 +122,16 @@ sensing:
   # from CV detection only and no weights are shown.
   loadcells:
     enabled: true
-    port: "COM5"           # Silicon Labs CP210x (ESP32) — driver installed 2026-06-17
+    port: "COM3"           # Silicon Labs CP210x (ESP32) — enumerated as COM3 (2026-06-24)
     baudrate: 115200
     stale_after: 5.0       # seconds without data → treated as disconnected
-    # 4 receptors: firmware should emit bin_0_4, bin_0_5, bin_1_2, kit_box. If your
-    # firmware uses different keys, map them here, e.g.
-    #   {cellA: bin_0_4, cellB: bin_0_5, cellC: bin_1_2, cellD: kit_box}.
-    bin_remap: {}
+    # 4 receptors. Firmware emits bin_0_0/bin_0_1/bin_1_0/bin_1_1; remap to the
+    # canonical grid ids + box (identified live 2026-06-24):
+    bin_remap:
+      bin_0_1: bin_0_4    # 1 kg receptor  → 3.6 g items
+      bin_0_0: bin_0_5    # 5 kg receptor  → 3.1 g items
+      bin_1_0: bin_1_2    # 10 kg receptor → 67.1 g items
+      bin_1_1: kit_box    # added 5 kg receptor → kitting box (off-camera)
     # Kitting box = the 4th load receptor (separate 5 kg cell, off-camera). Items
     # are PLACED here; its weight rises from empty. Counting is placement-driven
     # (see sensing/placement.py).
