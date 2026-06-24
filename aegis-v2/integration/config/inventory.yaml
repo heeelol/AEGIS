@@ -12,14 +12,18 @@ items:
   bolt_m6:   { unit_g: 13.9 }
   washer_m6: { unit_g: 1.1 }
   amp:       { unit_g: 3.8 }   # one AMP = 3.8 g (confirmed live 2026-06-17)
-  # 3-load-receptor demo items — distinct weights so box placements are attributable.
-  part_a:    { unit_g: 63.7 }  # bin_1_0
-  part_b:    { unit_g: 3.6 }   # bin_0_0
+  # Kitting demo items (one per BOM source bin). Per-bin removal is measured by
+  # each bin's OWN load cell, so near-equal weights (3.6 vs 3.1) still attribute
+  # correctly; the box weight confirms placement and total.
+  part_p04:  { unit_g: 3.6 }   # bin_0_4 (1 kg receptor)
+  part_p05:  { unit_g: 3.1 }   # bin_0_5 (5 kg receptor)
+  part_p12:  { unit_g: 67.1 }  # bin_1_2 (10 kg receptor)
 
 bins:
   # bin_id: item_name   (bin_id matches the load-cell keys, AFTER bin_remap)
-  # --- 3-load-receptor kitting demo: the 2 BOM source bins ---
-  bin_1_0: part_a
-  bin_0_0: part_b
-  # The kitting box (kit_box) is the 3rd receptor; it is NOT an item bin —
-  # configured under sensing.loadcells.kit_box in settings.yaml.
+  # --- Kitting demo: 3 BOM source bins (each on its own load receptor) ---
+  bin_0_4: part_p04
+  bin_0_5: part_p05
+  bin_1_2: part_p12
+  # The kitting box (kit_box) is a SEPARATE 4th receptor (off-camera); it is NOT
+  # an item bin — configured under sensing.loadcells.kit_box in settings.yaml.

@@ -72,6 +72,23 @@ def test_noise_tolerance():
     assert s.complete
 
 
+def test_three_bins_with_near_equal_weights():
+    # Real demo config: bin_0_4=3.6 g, bin_0_5=3.1 g (0.5 g apart), bin_1_2=67.1 g.
+    units = {"bin_0_4": 3.6, "bin_0_5": 3.1, "bin_1_2": 67.1}
+    tg = {"bin_0_4": 3, "bin_0_5": 3, "bin_1_2": 3}
+    t = PlacementTracker(units, tg, "kit_box", 1.5)
+    assert abs(t.expected_grams - 221.4) < 0.05
+
+    # 2 from bin_0_4 + 1 from bin_0_5 placed; each bin's own cell bounds the count
+    # so the near-equal weights don't cross-credit.
+    s = t.update({"bin_0_4": -7.2, "bin_0_5": -3.1, "bin_1_2": 0, "kit_box": 10.3})
+    assert s.placed == {"bin_0_4": 2, "bin_0_5": 1, "bin_1_2": 0}
+
+    # Full kit completes.
+    s = t.update({"bin_0_4": -10.8, "bin_0_5": -9.3, "bin_1_2": -201.3, "kit_box": 221.4})
+    assert s.complete and s.placed == {"bin_0_4": 3, "bin_0_5": 3, "bin_1_2": 3}
+
+
 def test_software_tare_resets_baseline():
     t = tracker()
     # Pretend the box is sitting at 202 g; tare makes that the new zero.

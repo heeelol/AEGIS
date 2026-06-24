@@ -2,7 +2,7 @@
 # ================================================
 
 camera:
-  source: 1                   # 0 = default webcam, or video path / RTSP URL
+  source: 0                   # 0 = default webcam, or video path / RTSP URL
   width: 1280
   height: 720
   fps: 30
@@ -99,10 +99,11 @@ bin_assignment:
 # the live count with no target. Leave commented to disable targets entirely.
 work_order:
   targets:
-    # 3-load-receptor demo: only bin_0_0 (top-left) and bin_1_0 (bottom-left) are
-    # in the BOM, target 3 each. Every other bin is 0 → greyed "not in BOM".
-    - [3, 0, 0, 0, 0, 0]   # layer 0 (top) → 6 bins; bin_0_0 = part_b ×3
-    - [3, 0, 0]            # layer 1 (bottom) → 3 bins; bin_1_0 = part_a ×3
+    # Kitting demo: BOM = bin_0_4 (3.6 g) + bin_0_5 (3.1 g) on the top row and
+    # bin_1_2 (67.1 g) on the bottom row, target 3 each. Every other bin is 0 →
+    # greyed "not in BOM".
+    - [0, 0, 0, 0, 3, 3]   # layer 0 (top) → 6 bins; bin_0_4 & bin_0_5
+    - [0, 0, 3]            # layer 1 (bottom) → 3 bins; bin_1_2
 
 # --- Sensing (future: Modbus / Serial) -----------
 sensing:
@@ -124,15 +125,16 @@ sensing:
     port: "COM5"           # Silicon Labs CP210x (ESP32) — driver installed 2026-06-17
     baudrate: 115200
     stale_after: 5.0       # seconds without data → treated as disconnected
-    # 3-receptor demo: firmware emits canonical ids directly (bin_1_0, bin_0_0,
-    # kit_box), so no remap is needed. If your firmware uses different keys, map
-    # them here, e.g.  {cellA: bin_1_0, cellB: bin_0_0, cellC: kit_box}.
+    # 4 receptors: firmware should emit bin_0_4, bin_0_5, bin_1_2, kit_box. If your
+    # firmware uses different keys, map them here, e.g.
+    #   {cellA: bin_0_4, cellB: bin_0_5, cellC: bin_1_2, cellD: kit_box}.
     bin_remap: {}
-    # Kitting box = the 3rd load receptor. Items are PLACED here; its weight rises
-    # from empty. Counting is placement-driven (see sensing/placement.py).
+    # Kitting box = the 4th load receptor (separate 5 kg cell, off-camera). Items
+    # are PLACED here; its weight rises from empty. Counting is placement-driven
+    # (see sensing/placement.py).
     kit_box:
       box_id: kit_box
-      tolerance_g: 1.8     # ±half the smaller item (3.6 g): counts can't be a whole item off
+      tolerance_g: 1.5     # ~half the smallest item (3.1 g): a whole small item can't hide in noise
 
 # --- OpenCV Camera Overlay -----------------------
 ui:

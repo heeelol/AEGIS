@@ -8,15 +8,21 @@ from the 2 BOM bins and places items into the box. The **per-bin counter increme
 item is placed into the box** (box-cell-driven), not when removed from a bin. Overpick is shown in
 the status bar. Kit completes when both bins hit target AND the box total weight matches.
 
-## Physical model
-| Receptor (load cell id) | Role | Item | unit_g | Target |
-|---|---|---|---|---|
-| `bin_1_0` | BOM source bin A | part_a | 63.7 | 3 |
-| `bin_0_0` | BOM source bin B | part_b | 3.6 | 3 |
-| `kit_box` | Kitting box (destination) | — | — | expected 201.9 g |
+## Physical model (4 load receptors: 3 source bins + box)
+| Receptor (load cell id) | Cell | Role | Item | unit_g | Target |
+|---|---|---|---|---|---|
+| `bin_0_4` | 1 kg | BOM source bin | part_p04 | 3.6 | 3 |
+| `bin_0_5` | 5 kg | BOM source bin | part_p05 | 3.1 | 3 |
+| `bin_1_2` | 10 kg | BOM source bin | part_p12 | 67.1 | 3 |
+| `kit_box` | 5 kg (off-camera) | Kitting box (destination) | — | — | expected 221.4 g |
 
-The other 7 bins have no load cell and `target = 0` → rendered grey "not in BOM".
-Expected box total = 3·63.7 + 3·3.6 = **201.9 g**. Match tolerance = ±1.8 g (½ the smaller unit).
+The other 6 bins have no load cell and `target = 0` → rendered grey "not in BOM".
+Expected box total = 3·3.6 + 3·3.1 + 3·67.1 = **221.4 g**. Match tolerance = ±1.5 g.
+
+**Near-equal weights:** bin_0_4 (3.6 g) and bin_0_5 (3.1 g) are too close to tell apart
+from the box weight alone, but each bin's **own** load cell bounds its placed-count by what
+was removed from it, so final counts stay correct (only a single in-flight item could be
+momentarily mis-credited between those two).
 
 ## Counting logic (placement-driven)
 1. The **box cell is the trigger**: when box weight rises by ≈ one item's `unit_g`, a placement occurred.
