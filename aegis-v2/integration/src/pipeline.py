@@ -361,6 +361,7 @@ class Pipeline:
             ema_alpha=box_cfg.get("ema_alpha", 0.4),
             hysteresis=box_cfg.get("hysteresis", 0.25),
             box_tolerance_g=box_cfg.get("box_tolerance_g"),
+            box_step_tolerance_g=box_cfg.get("box_step_tolerance_g"),
         )
         self._placement.tare(self._loadcells.get_weights())  # software zero at boot
 

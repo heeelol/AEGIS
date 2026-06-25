@@ -1,25 +1,29 @@
 """
-Placement Tracker (per-receptor kitting counter)
-================================================
+Placement Tracker (box-verified, conservation-based counting)
+=============================================================
 Counts items for the kitting demo across 4 load receptors: 3 source bins (each
 one item type, on its own cell) + 1 kitting box.
 
-Design (revised 2026-06-25 for robustness — see the spec):
+A bin's count only rises when the box **verifies** the item is in it — by
+conservation of mass: the weight that LEFT the bin must ARRIVE in the box.
 
-* **Each source bin is counted from its OWN cell.** The bin is tared FULL, so its
-  weight goes negative as items leave: ``count = round(-weight / unit_g)``. Each
-  cell is range-matched to its item (1 kg cell for 3.6 g parts, etc.), so this is
-  reliable for small AND large items.
-* **The box is NOT used to attribute per-item counts.** A single 5 kg box cell
-  cannot resolve a 3.6 g item added on top of a few hundred grams — small items
-  vanish in its noise. So the box weight is shown only as a *verification* total
-  (``box_verified`` = box ≈ expected), it does not drive or gate the counters.
-* **Smoothing + hysteresis** keep the counter steady: weights are EMA-filtered and
-  each integer count only changes once the reading is clearly past the midpoint
-  (a deadband), so sensor jitter never makes the count flicker.
+  qty[bin] = (matched box increase) / unit_g[bin]
 
-Kit is complete when every BOM bin's count equals its target (no overpick).
-``tare()`` re-baselines all receptors so the demo can repeat without rebooting.
+Why this is robust for small items (the previous absolute-decomposition wasn't):
+we track the box weight **relative to a committed baseline** (the weight already
+accounted for by counted items). A newly-placed item is a small *delta* from that
+baseline — a +3.6 g step is resolvable even when the box already holds 200 g —
+whereas decomposing the absolute 203.6 g loses the 3.6 g in noise.
+
+Mechanics per update (all weights EMA-smoothed; bin counts hysteresis-debounced):
+  * removed[bin]  = round(-bin_weight / unit)         — items out of each bin (its own cell)
+  * unaccounted   = box_weight - Σ placed·unit        — box weight not yet credited
+  * CREDIT a bin (largest unit first, so the right item matches the box step) when
+    an item left it (placed < removed) AND unaccounted ≥ its unit  → item verified in box.
+  * UN-CREDIT when the item leaves the box (box drops) or returns to the bin.
+
+Overpick = placed > target → the bin shows how many to RETURN. Kit completes when
+every BOM bin's verified count equals its target. ``tare()`` re-baselines.
 """
 
 from __future__ import annotations
@@ -29,22 +33,18 @@ from dataclasses import dataclass, field
 
 @dataclass
 class KitState:
-    """Snapshot of the kitting state for the dashboard/FSM."""
-    placed: dict[str, int]           # bin_id -> items counted out of that bin
-    removed: dict[str, int]          # alias of placed (kept for the watcher/UI)
+    placed: dict[str, int]           # bin_id -> items verified in the box from that bin
+    removed: dict[str, int]          # bin_id -> items currently out of that bin
     box_grams: float                 # current (tared, smoothed) box weight
     expected_grams: float            # target total weight in the box
     targets: dict[str, int]
-    complete: bool                   # all targets met, no overpick
+    complete: bool
     state: str                       # INIT|PICKING|OVERPICK|KIT_COMPLETE
-    box_verified: bool = False       # box total ≈ expected (cross-check only)
-    overpick: dict[str, int] = field(default_factory=dict)
+    box_verified: bool = False       # box total ≈ expected (display cross-check)
+    overpick: dict[str, int] = field(default_factory=dict)  # bin_id -> items to return
 
 
 class PlacementTracker:
-    """Per-receptor counter: each BOM bin counted from its own cell, with
-    EMA smoothing + hysteresis for a steady, robust count."""
-
     def __init__(
         self,
         units_g: dict[str, float],
@@ -54,25 +54,31 @@ class PlacementTracker:
         ema_alpha: float = 0.4,
         hysteresis: float = 0.25,
         box_tolerance_g: float | None = None,
+        box_step_tolerance_g: float | None = None,
     ):
         self._units = {b: float(u) for b, u in units_g.items() if u and u > 0}
         self._targets = {b: int(t) for b, t in targets.items()}
         self._box_id = box_id
-        self._alpha = float(ema_alpha)        # EMA weight on the newest sample
-        self._h = float(hysteresis)           # deadband (fraction of a unit)
-        # Box verification tolerance: generous, since the box cell is coarse for
-        # small items. Defaults to ~1.5× the smallest unit (or 5 g, whichever is
-        # larger). Cross-check only — never blocks completion.
+        self._alpha = float(ema_alpha)
+        self._h = float(hysteresis)
+
         smallest = min(self._units.values(), default=1.0)
+        # How much the box step may fall short of a unit and still credit it.
+        self._step_tol = (
+            float(box_step_tolerance_g) if box_step_tolerance_g is not None
+            else 0.5 * smallest
+        )
+        # Generous tolerance for the whole-box "verified" display flag.
         self._box_tol = (
             float(box_tolerance_g) if box_tolerance_g is not None
             else max(5.0, 1.5 * smallest)
         )
-        self._tol = tolerance_g  # retained for API compatibility (unused here)
+        self._tol = tolerance_g  # API compat (unused)
 
-        self._offsets: dict[str, float] = {}   # software tare
-        self._ema: dict[str, float] = {}       # smoothed, tared weights
-        self._counts: dict[str, int] = {b: 0 for b in self._units}  # hysteresis state
+        self._offsets: dict[str, float] = {}
+        self._ema: dict[str, float] = {}
+        self._removed: dict[str, int] = {b: 0 for b in self._units}
+        self._placed: dict[str, int] = {b: 0 for b in self._units}
 
     @property
     def box_id(self) -> str:
@@ -83,55 +89,78 @@ class PlacementTracker:
         return sum(self._targets.get(b, 0) * u for b, u in self._units.items())
 
     def tare(self, weights: dict[str, float]) -> None:
-        """Re-baseline every receptor and reset the smoothed/committed state."""
         self._offsets = {k: float(v) for k, v in weights.items()}
         self._ema = {}
-        self._counts = {b: 0 for b in self._units}
+        self._removed = {b: 0 for b in self._units}
+        self._placed = {b: 0 for b in self._units}
 
-    def _adj(self, weights: dict[str, float], key: str) -> float:
+    def _adj(self, weights, key):
         return float(weights.get(key, 0.0)) - self._offsets.get(key, 0.0)
 
-    def _smooth(self, weights: dict[str, float]) -> dict[str, float]:
-        """EMA-filter the tared weights of every receptor we care about."""
-        keys = set(self._units) | {self._box_id}
-        for k in keys:
+    def _smooth(self, weights):
+        for k in set(self._units) | {self._box_id}:
             adj = self._adj(weights, k)
             self._ema[k] = (adj if k not in self._ema
                             else self._alpha * adj + (1 - self._alpha) * self._ema[k])
         return self._ema
 
-    def _hysteretic_count(self, removed_raw: float, current: int) -> int:
-        """Integer count that only changes once clearly past the .5 boundary."""
+    def _hysteretic(self, raw, current):
         n = current
-        # increase while well above the next boundary
-        while removed_raw >= n + 0.5 + self._h:
+        while raw >= n + 0.5 + self._h:
             n += 1
-        # decrease while well below the previous boundary
-        while n > 0 and removed_raw <= n - 0.5 - self._h:
+        while n > 0 and raw <= n - 0.5 - self._h:
             n -= 1
         return n
+
+    def _accounted(self):
+        return sum(self._placed[b] * self._units[b] for b in self._units)
 
     def update(self, weights: dict[str, float]) -> KitState:
         sm = self._smooth(weights)
 
-        # Per-bin counts from each bin's own cell (negative = removed).
+        # Items out of each bin (own cell, debounced).
         for b, unit in self._units.items():
-            removed_raw = max(0.0, -sm.get(b, 0.0)) / unit
-            self._counts[b] = self._hysteretic_count(removed_raw, self._counts[b])
-        placed = dict(self._counts)
+            raw = max(0.0, -sm.get(b, 0.0)) / unit
+            self._removed[b] = self._hysteretic(raw, self._removed[b])
 
         box_grams = max(0.0, sm.get(self._box_id, 0.0))
+        # Largest unit first so a big item's box step isn't eaten by small items.
+        order = sorted(self._units, key=lambda b: -self._units[b])
 
+        # CREDIT: item left the bin AND the box has risen to account for it.
+        changed = True
+        while changed:
+            changed = False
+            unaccounted = box_grams - self._accounted()
+            for b in order:
+                if (self._placed[b] < self._removed[b]
+                        and unaccounted >= self._units[b] - self._step_tol):
+                    self._placed[b] += 1
+                    changed = True
+                    break
+
+        # UN-CREDIT: item left the box (box dropped) or was returned to the bin.
+        changed = True
+        while changed:
+            changed = False
+            overshoot = self._accounted() - box_grams
+            for b in order:
+                if self._placed[b] > 0 and (
+                    self._placed[b] > self._removed[b]
+                    or overshoot >= self._units[b] - self._step_tol
+                ):
+                    self._placed[b] -= 1
+                    changed = True
+                    break
+
+        placed = dict(self._placed)
         overpick = {
             b: placed[b] - self._targets.get(b, 0)
             for b in placed if placed[b] > self._targets.get(b, 0)
         }
-        targets_met = all(
-            placed.get(b, 0) == self._targets.get(b, 0) for b in self._units
-        )
-        box_verified = abs(box_grams - self.expected_grams) <= self._box_tol
-        # Completion is driven by the reliable per-bin cells, not the coarse box.
+        targets_met = all(placed.get(b, 0) == self._targets.get(b, 0) for b in self._units)
         complete = bool(self._units) and targets_met and not overpick
+        box_verified = abs(box_grams - self.expected_grams) <= self._box_tol
 
         if complete:
             state = "KIT_COMPLETE"
@@ -144,7 +173,7 @@ class PlacementTracker:
 
         return KitState(
             placed=placed,
-            removed=dict(placed),
+            removed=dict(self._removed),
             box_grams=round(box_grams, 1),
             expected_grams=round(self.expected_grams, 1),
             targets=dict(self._targets),

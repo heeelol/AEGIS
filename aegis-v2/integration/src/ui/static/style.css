@@ -302,6 +302,14 @@ h2 {
   * { animation: none !important; transition: none !important; }
 }
 
+/* ── Per-bin "return N" indicator (overpick) ────────── */
+.return-badge {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  color: var(--alert); letter-spacing: 0.5px; margin-bottom: 3px;
+  padding: 1px 6px; border: 1px solid var(--alert); border-radius: 8px;
+  display: inline-block; background: var(--alert-dim);
+}
+
 /* ── Per-bin live load-cell weight ──────────────────── */
 .bin-weight {
   font-family: var(--mono); font-size: 11px; font-weight: 600;

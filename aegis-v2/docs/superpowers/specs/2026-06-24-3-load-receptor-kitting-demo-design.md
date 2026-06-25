@@ -24,25 +24,30 @@ from the box weight alone, but each bin's **own** load cell bounds its placed-co
 was removed from it, so final counts stay correct (only a single in-flight item could be
 momentarily mis-credited between those two).
 
-## Counting logic (placement-driven)
-**Revised 2026-06-25 — per-bin counting (was box-decomposition):** the original
-design decomposed the box weight into per-item counts. That failed in practice: a single
-5 kg box cell can't resolve a 3.6 g (or 16.6 g) item added on top of a heavy one, so small
-items were swallowed by box noise and only the 67 g bin counted. Robust replacement:
+## Counting logic — box-verified (conservation of mass)
+**Revised 2026-06-25 (v3).** A bin's count rises only when the box **verifies** the item is in
+it: the weight that left the bin must arrive in the box (`qty = matched box increase / unit_g`).
+History: v1 decomposed the *absolute* box weight (small items lost in noise → only the 67 g bin
+counted); v2 counted purely per-bin (lost the box verification). v3 keeps both, robustly, by
+tracking the box's **change from a committed baseline**:
 
-1. **Count each BOM bin from its OWN cell** (range-matched: 1 kg cell for 3.6 g parts, etc.):
-   `count = round(-bin_weight / unit_g)`. Reliable for small and large items alike.
-2. **EMA-smooth** the weights and apply **hysteresis** (a deadband around each .5 boundary)
-   so sensor jitter never flickers the count.
-3. **The box weight is a verification cross-check only** (`box_verified` = box ≈ expected,
-   within a generous `box_tolerance_g`). It is displayed but never drives or gates counts.
+1. `removed[bin] = round(-bin_weight / unit)` from each bin's own cell (EMA-smoothed, hysteresis).
+2. `unaccounted = box_weight − Σ placed·unit` (box weight not yet credited).
+3. **Credit** a bin (largest unit first, so the right item matches the box step) when an item
+   left it (`placed < removed`) **and** `unaccounted ≥ its unit`. **Un-credit** when the item
+   leaves the box (box drops) or returns to the bin.
+
+Because it's a *delta from the committed baseline*, a +3.6 g step is resolvable even with 200 g
+already in the box — the v1 failure mode is gone (verified by `test_small_item_counts_on_top_of_heavy_box`).
 
 ## FSM
-`INIT` (bins full) → `PICKING` → per-bin `COMPLETE` when count == target → `OVERPICK` when
-count > target (status bar: "RETURN N ITEMS TO BIN X") → `KIT_COMPLETE` when **all BOM bins ==
-target, no overpick** (box shown as ✓verified cross-check, not a gate) → Complete-kit
-(`POST /api/kit/complete`) re-tares all receptors, resets counts, returns to INIT.
-Counts refresh every ~3 frames (was 30) for a responsive counter.
+`INIT` (bins full, box empty) → `PICKING` → per-bin `COMPLETE` when verified count == target →
+`OVERPICK` when count > target (bin shows "↩ RETURN N"; status bar too) → `KIT_COMPLETE` when
+**all BOM bins == target, no overpick** → Complete-kit (`POST /api/kit/complete`) re-tares all
+receptors, resets counts, returns to INIT. Counts refresh every ~3 frames (was 30).
+
+UI: the kitting-box panel is **removed** (box is sensing-only); each bin shows a small **"↩ RETURN N"**
+badge above its counter on overpick.
 
 ## Changes
 - **config/settings.yaml**: `work_order.targets` → only bin_1_0 & bin_0_0 nonzero; `loadcells.bin_remap`

@@ -49,7 +49,6 @@ async function poll() {
     }
 
     renderBins(bins, layout, detectedById);
-    renderKit(kit, bins);
     renderStatus(bins, detectedById, kit);
 
     document.getElementById("last-updated").textContent =
@@ -121,6 +120,10 @@ function makeBinTile(binId, b, detected) {
   let inner = '<div class="bin-id">' + label + '</div>';
 
   if (status !== "not_in_bom") {
+    // On overpick, show a small "return N" indicator above the counter.
+    if (status === "overpick") {
+      inner += '<div class="return-badge">↩ RETURN ' + (b.current - b.total) + '</div>';
+    }
     const cur = status === "overpick"
       ? '<span class="over">' + b.current + '</span>'
       : String(b.current);
@@ -169,51 +172,6 @@ async function overridePick(binId, delta) {
     });
     if (res.ok) poll();
   } catch (err) { console.error("Override error:", err); }
-}
-
-// ── Kitting box (3rd load receptor) ─────────────────
-function prettyState(s) {
-  return ({ INIT: "Ready", PICKING: "Picking…", OVERPICK: "Over-picked",
-            KIT_COMPLETE: "Kit complete ✓" })[s] || s || "—";
-}
-function renderKit(kit) {
-  const el = document.getElementById("kitbox");
-  if (!kit || !kit.state) {
-    el.className = "kitbox offline";
-    el.innerHTML = '<div class="kit-empty">Load cells offline — connect the ESP32 (3 receptors)</div>';
-    return;
-  }
-  el.className = "kitbox state-" + String(kit.state).toLowerCase();
-
-  const placed = kit.placed || {};
-  const targets = kit.targets || {};
-  const over = kit.overpick || {};
-
-  let rows = "";
-  for (const binId of Object.keys(targets)) {
-    const p = placed[binId] || 0, t = targets[binId] || 0, o = over[binId] || 0;
-    const cls = o > 0 ? "over" : (t > 0 && p >= t ? "done" : "");
-    rows += '<div class="kit-line ' + cls + '">' +
-            '<span class="kit-bin">' + binId + '</span>' +
-            '<span class="kit-count">' + p + '/' + t + '</span></div>';
-  }
-
-  const bg = +(kit.box_grams || 0), eg = +(kit.expected_grams || 0);
-  const pct = eg > 0 ? Math.min(100, Math.round((100 * bg) / eg)) : 0;
-
-  // Box weight is a cross-check only (a single 5 kg cell can't resolve small
-  // items); the per-bin counts above are authoritative.
-  const verified = kit.box_verified
-    ? '<span class="kit-ok">✓ verified</span>'
-    : '<span class="kit-check">box cross-check</span>';
-
-  el.innerHTML =
-    '<div class="kit-state">' + prettyState(kit.state) + '</div>' +
-    '<div class="kit-lines">' + rows + '</div>' +
-    '<div class="kit-weight">' +
-      '<div class="kit-bar"><span style="width:' + pct + '%"></span></div>' +
-      '<div class="kit-grams">' + bg.toFixed(1) + ' / ' + eg.toFixed(1) + ' g ' + verified + '</div>' +
-    '</div>';
 }
 
 // ── Status bar + Complete button ────────────────────

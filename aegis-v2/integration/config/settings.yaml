@@ -136,15 +136,16 @@ sensing:
       bin_1_0: bin_1_2    # 10 kg receptor → 67.1 g items
       bin_1_1: kit_box    # added 5 kg receptor → kitting box (off-camera)
     # Kitting box = the 4th load receptor (separate 5 kg cell, off-camera).
-    # Counting is PER-BIN now (each bin read from its own range-matched cell), so
-    # small items count reliably. The box weight is a verification cross-check
-    # only — one 5 kg cell can't resolve a 3.6 g item added on top of heavy ones,
-    # so it never drives or gates the counters. See sensing/placement.py.
+    # A bin's count only rises when the box VERIFIES the item is in it (the weight
+    # that left the bin arrives in the box). This is done on the box weight's
+    # *change from a committed baseline*, so small items count reliably (a +3.6 g
+    # step is resolvable even with 200 g already in the box). See sensing/placement.py.
     kit_box:
       box_id: kit_box
-      box_tolerance_g: 8.0   # box ≈ expected within this → "verified" (display only)
-      ema_alpha: 0.4         # weight smoothing: higher = snappier, lower = smoother
-      hysteresis: 0.25       # anti-flicker deadband (fraction of an item)
+      box_step_tolerance_g: 1.8   # box step may fall this short of a unit and still count
+      box_tolerance_g: 8.0        # whole-box ≈ expected within this → "verified" (display)
+      ema_alpha: 0.4              # weight smoothing: higher = snappier, lower = smoother
+      hysteresis: 0.25            # anti-flicker deadband (fraction of an item)
 
 # --- OpenCV Camera Overlay -----------------------
 ui:

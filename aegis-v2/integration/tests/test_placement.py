@@ -1,4 +1,4 @@
-"""Tests for the per-receptor kitting placement tracker (robust per-bin counting)."""
+"""Tests for box-verified, conservation-based kitting counting."""
 
 import sys
 from pathlib import Path
@@ -7,7 +7,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # integration/
 
 from src.sensing.placement import PlacementTracker
 
-# Demo config: each bin counted from its OWN cell; box is cross-check only.
 UNITS = {"bin_0_4": 3.6, "bin_0_5": 16.6, "bin_1_2": 67.1}
 TARGETS = {"bin_0_4": 3, "bin_0_5": 3, "bin_1_2": 3}
 BOX = "kit_box"
@@ -15,77 +14,96 @@ EXPECTED = 3 * 3.6 + 3 * 16.6 + 3 * 67.1  # 261.9
 
 
 def tracker():
-    return PlacementTracker(UNITS, TARGETS, BOX, ema_alpha=0.4, hysteresis=0.25)
+    return PlacementTracker(UNITS, TARGETS, BOX, ema_alpha=0.4, hysteresis=0.25,
+                            box_step_tolerance_g=1.8)
 
 
-def settle(t, weights, n=20):
-    """Feed the same weights repeatedly so the EMA converges; return last state."""
+def settle(t, weights, n=25):
+    """Drive the same weights until the EMA converges; return the last state."""
     s = None
     for _ in range(n):
         s = t.update(weights)
     return s
 
 
+def w(b04=0.0, b05=0.0, b12=0.0, box=0.0):
+    return {"bin_0_4": b04, "bin_0_5": b05, "bin_1_2": b12, "kit_box": box}
+
+
 def test_empty_is_init():
-    s = settle(tracker(), {"bin_0_4": 0, "bin_0_5": 0, "bin_1_2": 0, "kit_box": 0})
+    s = settle(tracker(), w())
     assert s.placed == {"bin_0_4": 0, "bin_0_5": 0, "bin_1_2": 0}
     assert s.state == "INIT" and not s.complete
 
 
-def test_small_item_counts_from_own_cell():
-    # The whole point of the rewrite: a 3.6 g item must count, with NO box weight.
-    s = settle(tracker(), {"bin_0_4": -3.6, "bin_0_5": 0, "bin_1_2": 0, "kit_box": 0})
-    assert s.placed["bin_0_4"] == 1
-    assert s.state == "PICKING"
+def test_removed_but_not_in_box_does_not_count():
+    # Item lifted out of the bin but NOT placed in the box -> no count (verified-only).
+    s = settle(tracker(), w(b04=-3.6, box=0))
+    assert s.removed["bin_0_4"] == 1
+    assert s.placed["bin_0_4"] == 0
+    assert s.state == "INIT"
 
 
-def test_all_three_bins_count_mixed():
-    s = settle(tracker(), {"bin_0_4": -7.2, "bin_0_5": -33.2, "bin_1_2": -67.1, "kit_box": 0})
-    assert s.placed == {"bin_0_4": 2, "bin_0_5": 2, "bin_1_2": 1}
+def test_small_item_counts_when_verified_in_box():
+    s = settle(tracker(), w(b04=-3.6, box=3.6))
+    assert s.placed["bin_0_4"] == 1 and s.state == "PICKING"
+
+
+def test_small_item_counts_on_top_of_heavy_box():
+    # Robustness: 3 big items already in the box (201 g); a 3.6 g step still counts.
+    t = tracker()
+    settle(t, w(b12=-201.3, box=201.3))
+    s = settle(t, w(b04=-3.6, b12=-201.3, box=204.9))
+    assert s.placed == {"bin_0_4": 1, "bin_0_5": 0, "bin_1_2": 3}
+
+
+def test_mixed_conservation():
+    s = settle(tracker(), w(b04=-3.6, b05=-16.6, b12=-67.1, box=87.3))
+    assert s.placed == {"bin_0_4": 1, "bin_0_5": 1, "bin_1_2": 1}
+
+
+def test_held_then_placed():
+    t = tracker()
+    s = settle(t, w(b12=-67.1, box=0))          # removed, held in hand
+    assert s.placed["bin_1_2"] == 0
+    s = settle(t, w(b12=-67.1, box=67.1))        # now in the box
+    assert s.placed["bin_1_2"] == 1
+
+
+def test_return_to_bin_uncredits():
+    t = tracker()
+    settle(t, w(b04=-3.6, box=3.6))
+    assert t.update(w(b04=-3.6, box=3.6)).placed["bin_0_4"] == 1
+    s = settle(t, w(b04=0, box=0))               # item back in the bin, box empty
+    assert s.placed["bin_0_4"] == 0
 
 
 def test_hysteresis_no_flicker():
     t = tracker()
-    settle(t, {"bin_0_4": -3.6, "bin_0_5": 0, "bin_1_2": 0, "kit_box": 0})
-    assert t.update({"bin_0_4": -3.6}).placed["bin_0_4"] == 1
-    # Jitter ±1 g around one item must not move the count.
-    for w in (-2.8, -4.4, -3.1, -4.1, -3.6, -2.9):
-        s = t.update({"bin_0_4": w})
-        assert s.placed["bin_0_4"] == 1, (w, s.placed)
+    settle(t, w(b04=-3.6, box=3.6))
+    for jb, jx in [(-2.9, 3.0), (-4.3, 4.2), (-3.1, 3.1), (-4.0, 4.0)]:
+        s = t.update(w(b04=jb, box=jx))
+        assert s.placed["bin_0_4"] == 1
 
 
-def test_half_item_does_not_count():
-    # A reading at ~0.5 item (below the 0.75 hysteresis threshold) stays at 0.
-    s = settle(tracker(), {"bin_0_4": -1.8, "bin_0_5": 0, "bin_1_2": 0, "kit_box": 0})
-    assert s.placed["bin_0_4"] == 0
-
-
-def test_full_kit_completes_and_box_verifies():
-    s = settle(tracker(), {"bin_0_4": -10.8, "bin_0_5": -49.8, "bin_1_2": -201.3, "kit_box": EXPECTED})
-    assert s.placed == {"bin_0_4": 3, "bin_0_5": 3, "bin_1_2": 3}
-    assert s.complete and s.state == "KIT_COMPLETE"
-    assert s.box_verified
-
-
-def test_completion_independent_of_box():
-    # Counts met but box empty -> still complete (box never gates), just not verified.
-    s = settle(tracker(), {"bin_0_4": -10.8, "bin_0_5": -49.8, "bin_1_2": -201.3, "kit_box": 0})
-    assert s.complete
-    assert not s.box_verified
-
-
-def test_overpick_flagged():
-    s = settle(tracker(), {"bin_0_4": 0, "bin_0_5": 0, "bin_1_2": -4 * 67.1, "kit_box": 0})
+def test_overpick_shows_return_count():
+    s = settle(tracker(), w(b12=-4 * 67.1, box=4 * 67.1))
     assert s.placed["bin_1_2"] == 4
-    assert s.overpick == {"bin_1_2": 1}
+    assert s.overpick == {"bin_1_2": 1}          # return 1
     assert s.state == "OVERPICK" and not s.complete
+
+
+def test_full_kit_completes():
+    s = settle(tracker(), w(b04=-10.8, b05=-49.8, b12=-201.3, box=EXPECTED))
+    assert s.placed == {"bin_0_4": 3, "bin_0_5": 3, "bin_1_2": 3}
+    assert s.complete and s.state == "KIT_COMPLETE" and s.box_verified
 
 
 def test_software_tare_resets():
     t = tracker()
-    settle(t, {"bin_0_4": -10.8, "bin_0_5": -49.8, "bin_1_2": -201.3, "kit_box": EXPECTED})
-    t.tare({"bin_0_4": -10.8, "bin_0_5": -49.8, "bin_1_2": -201.3, "kit_box": EXPECTED})
-    s = settle(t, {"bin_0_4": -10.8, "bin_0_5": -49.8, "bin_1_2": -201.3, "kit_box": EXPECTED})
+    settle(t, w(b04=-10.8, b05=-49.8, b12=-201.3, box=EXPECTED))
+    t.tare(w(b04=-10.8, b05=-49.8, b12=-201.3, box=EXPECTED))
+    s = settle(t, w(b04=-10.8, b05=-49.8, b12=-201.3, box=EXPECTED))
     assert s.placed == {"bin_0_4": 0, "bin_0_5": 0, "bin_1_2": 0}
     assert s.box_grams == 0.0
 
