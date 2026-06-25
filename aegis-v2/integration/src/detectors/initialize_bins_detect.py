@@ -43,13 +43,19 @@ def load_model(model_path=None):
 
 
 def detect_bins(image, model, expected_count=None,
-                overlap_thresh=0.35, min_area_frac=0.25):
+                overlap_thresh=0.6, min_area_frac=0.15):
     """Detect bins with a DETECT model; return ``[{id, corners, center, area, conf}]``.
 
     Reads ``result.boxes.xyxy`` (axis-aligned) and expresses each as a 4-corner
     box so the downstream rotated-box code (grid calibration, point-in-polygon
     attribution) works identically. Returns ``[]`` when the model is ``None`` or
     finds nothing.
+
+    NOTE on the filter thresholds: axis-aligned boxes of adjacent bins overlap
+    more than the OBB model's oriented boxes, so the duplicate-suppression
+    threshold is looser here (0.6 vs the OBB 0.35) to avoid dropping a real bin —
+    that exact over-suppression turned 9 detections into 8 and broke calibration.
+    Override per-call (or wire to bin_detector config) if your layout needs it.
     """
     if model is None:
         return []

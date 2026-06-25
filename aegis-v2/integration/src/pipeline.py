@@ -514,9 +514,36 @@ class Pipeline:
             self._grid_session.calibrate(dets)
         except ValueError as e:
             logger.warning("Grid calibration failed: %s", e)
+            self._save_calib_debug(frame, dets)
             return
         logger.info("Workstation grid calibrated — 9 slots locked")
         self._apply_bins(self._grid_session.to_geofences())
+
+    def _save_calib_debug(self, frame, dets) -> None:
+        """On a failed calibration, save the frame with detections drawn so the
+        bin count/positions can be inspected (e.g. a double-box vs a missed bin)."""
+        try:
+            import numpy as np
+            dbg = frame.copy()
+            ys = [d["center"][1] for d in dets]
+            mid = (min(ys) + max(ys)) / 2 if ys else 0
+            for d in dets:
+                pts = np.asarray(d["corners"], dtype=np.int32).reshape(-1, 1, 2)
+                row = "T" if d["center"][1] < mid else "B"      # rough top/bottom split
+                color = (0, 255, 0) if row == "T" else (0, 180, 255)
+                cv2.polylines(dbg, [pts], True, color, 2)
+                cx, cy = int(d["center"][0]), int(d["center"][1])
+                cv2.circle(dbg, (cx, cy), 4, (0, 0, 255), -1)
+                cv2.putText(dbg, f"{row} {d.get('conf', 0):.2f}", (cx - 20, cy - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            n_top = sum(1 for d in dets if d["center"][1] < mid)
+            cv2.putText(dbg, f"{len(dets)} bins  top={n_top} bottom={len(dets)-n_top}",
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            out = _ROOT / "calib_debug.jpg"
+            cv2.imwrite(str(out), dbg)
+            logger.warning("Saved calibration debug image: %s (inspect bin boxes)", out)
+        except Exception as e:  # debug aid must never crash the pipeline
+            logger.debug("Could not save calib debug image: %s", e)
 
     def _init_kit(self, frame) -> None:
         """Key '2': snapshot → match to grid → present / missing bins."""
