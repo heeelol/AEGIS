@@ -127,6 +127,13 @@ function makeBinTile(binId, b, detected) {
     inner += '<div class="quantity">' + cur + '/' + b.total + '</div>';
   }
 
+  // Live load-cell weight (grams) — shown for bins with a cell so the sensor can
+  // be verified in real time. Bins without a cell read 0 and aren't in the job,
+  // so they stay clean.
+  if (b.weight !== undefined && (b.using || Math.abs(b.weight) > 0.05)) {
+    inner += '<div class="bin-weight">' + (+b.weight).toFixed(1) + ' g</div>';
+  }
+
   if (b.is_active && b.handedness) {
     // Place the flag on the side the hand should approach from: left hand → left.
     const side = b.handedness[0].toLowerCase() === "l" ? "hand-left" : "hand-right";

@@ -302,6 +302,14 @@ h2 {
   * { animation: none !important; transition: none !important; }
 }
 
+/* ── Per-bin live load-cell weight ──────────────────── */
+.bin-weight {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  color: var(--ink-dim); margin-top: 2px; letter-spacing: 0.5px;
+}
+.bin.complete .bin-weight { color: var(--green); }
+.bin.overpick .bin-weight { color: var(--alert); }
+
 /* ── Kitting box (3rd load receptor) ────────────────── */
 .kitbox-zone { flex: 0 0 auto; margin-top: 16px; }
 .kitbox {
