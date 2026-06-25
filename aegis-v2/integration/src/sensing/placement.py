@@ -1,26 +1,24 @@
 """
-Placement Tracker (box-verified, conservation-based counting)
-=============================================================
-Counts items for the kitting demo across 4 load receptors: 3 source bins (each
-one item type, on its own cell) + 1 kitting box.
+Placement Tracker (sequential single-bin kitting FSM)
+=====================================================
+Only ONE bin is active at a time, so the kitting box's weight change can only
+come from that one item type — which removes the cross-bin weight ambiguity
+(item variance, and same-weight items in different bins).
 
-A bin's **placed** count rises only when the box VERIFIES the item is in it: the
-weight that left the bin must arrive in the box. We track the box weight's change
-from a committed baseline, so small items count even on top of a heavy box.
+See docs/superpowers/specs/2026-06-25-sequential-single-bin-kitting-fsm.md.
 
-Two distinct "too many" conditions (do NOT conflate them):
-  * **overpick**  = removed > target  (too many taken OUT of the bin). The bin
-    shows "↩ RETURN N" so the extras go back. Not a red-screen event.
-  * **overpack**  = placed  > target  (too many IN the kit box). One of the four
-    full-red-screen faults — surfaced via ``alert``.
+Model
+-----
+* The operator may start any not-done bin; the first clear ~½-unit drop activates
+  it (``_active``) and soft-locks the rest. Forward-only: DONE bins stay locked.
+* Active bin count: ``placed = round((box − baseline_box) / unit_active)``.
+  On completion (``placed == removed == target``) the box weight is banked into
+  ``baseline_box`` and the bin is frozen — completed counters never fluctuate.
+* ``removed[bin]`` from each bin's own cell; ``holding = removed − placed``.
+* Four red faults (auto-clear when corrected): overpack-kit, remove-from-kit
+  (only checked when ``holding == 0``), pick-from-wrong-bin, return-to-wrong-bin.
 
-A bin is "done" (green) only when ``placed == target AND removed == target``
-(right amount in the box AND all extras returned).
-
-Per-item step tolerance: the box step for a big item is noisier in absolute grams
-than for a small one, so the credit tolerance scales with the item
-(``max(floor, fraction · unit)``) — fixes the large bin being inaccurate while
-keeping small items crisp.
+All weights are EMA-smoothed; integer counts use a hysteresis deadband.
 """
 
 from __future__ import annotations
@@ -31,17 +29,16 @@ from typing import Optional
 
 @dataclass
 class KitState:
-    placed: dict[str, int]           # items verified in the box, per bin
-    removed: dict[str, int]          # items currently out of the bin, per bin
-    box_grams: float
-    expected_grams: float
+    placed: dict[str, int]
+    removed: dict[str, int]
     targets: dict[str, int]
+    active: Optional[str]            # currently active bin id, or None (IDLE)
+    done: list[str]                  # completed bin ids (frozen)
+    box_grams: float
     complete: bool
-    state: str                       # INIT|PICKING|OVERPACK|KIT_COMPLETE
-    box_verified: bool = False
+    state: str                       # IDLE|PICKING|FAULT|KIT_COMPLETE
     overpick: dict[str, int] = field(default_factory=dict)   # removed-target (return to bin)
-    overpack: dict[str, int] = field(default_factory=dict)   # placed-target (red: remove from kit)
-    alert: Optional[dict] = None     # active full-red event, e.g. {type,message,bins}
+    alert: Optional[dict] = None     # active red fault {type,message,bin}
 
 
 class PlacementTracker:
@@ -56,48 +53,47 @@ class PlacementTracker:
         box_tolerance_g: float | None = None,
         box_step_tolerance_g: float | None = None,
         box_step_fraction: float = 0.15,
+        activation_frac: float = 0.5,
+        wrong_bin_frac: float = 0.5,
     ):
         self._units = {b: float(u) for b, u in units_g.items() if u and u > 0}
         self._targets = {b: int(t) for b, t in targets.items()}
         self._box_id = box_id
         self._alpha = float(ema_alpha)
         self._h = float(hysteresis)
-
         smallest = min(self._units.values(), default=1.0)
-        # Credit tolerance = max(floor, fraction · unit): big items get a larger
-        # absolute slack (their box step is noisier), small items stay tight.
-        self._step_floor = (
-            float(box_step_tolerance_g) if box_step_tolerance_g is not None
-            else 0.5 * smallest
-        )
+        self._step_floor = (float(box_step_tolerance_g) if box_step_tolerance_g is not None
+                            else 0.5 * smallest)
         self._step_frac = float(box_step_fraction)
-        self._box_tol = (
-            float(box_tolerance_g) if box_tolerance_g is not None
-            else max(5.0, 1.5 * smallest)
-        )
-        self._tol = tolerance_g  # API compat (unused)
+        self._activation = float(activation_frac)
+        self._wrong = float(wrong_bin_frac)
 
         self._offsets: dict[str, float] = {}
         self._ema: dict[str, float] = {}
-        self._removed: dict[str, int] = {b: 0 for b in self._units}
-        self._placed: dict[str, int] = {b: 0 for b in self._units}
+        self._reset_run()
+
+    def _reset_run(self):
+        self._baseline_box = 0.0
+        self._active: Optional[str] = None
+        self._done: set[str] = set()
+        self._removed = {b: 0 for b in self._units}
+        self._placed = {b: 0 for b in self._units}
 
     @property
-    def box_id(self) -> str:
+    def box_id(self):
         return self._box_id
 
     @property
-    def expected_grams(self) -> float:
+    def expected_grams(self):
         return sum(self._targets.get(b, 0) * u for b, u in self._units.items())
 
-    def _step_tol(self, b: str) -> float:
+    def _step_tol(self, b):
         return max(self._step_floor, self._step_frac * self._units[b])
 
-    def tare(self, weights: dict[str, float]) -> None:
+    def tare(self, weights):
         self._offsets = {k: float(v) for k, v in weights.items()}
         self._ema = {}
-        self._removed = {b: 0 for b in self._units}
-        self._placed = {b: 0 for b in self._units}
+        self._reset_run()
 
     def _adj(self, weights, key):
         return float(weights.get(key, 0.0)) - self._offsets.get(key, 0.0)
@@ -117,82 +113,111 @@ class PlacementTracker:
             n -= 1
         return n
 
-    def _accounted(self):
-        return sum(self._placed[b] * self._units[b] for b in self._units)
+    def _raw_removed(self, sm, b):
+        return max(0.0, -sm.get(b, 0.0)) / self._units[b]
 
-    def update(self, weights: dict[str, float]) -> KitState:
+    def update(self, weights):
         sm = self._smooth(weights)
 
-        for b, unit in self._units.items():
-            raw = max(0.0, -sm.get(b, 0.0)) / unit
-            self._removed[b] = self._hysteretic(raw, self._removed[b])
+        # 1) per-bin removal (own cell, debounced)
+        for b in self._units:
+            self._removed[b] = self._hysteretic(self._raw_removed(sm, b), self._removed[b])
 
-        box_grams = max(0.0, sm.get(self._box_id, 0.0))
-        order = sorted(self._units, key=lambda b: -self._units[b])  # largest unit first
+        # 2) activation: in IDLE, the clearest not-done bin past the threshold goes active
+        if self._active is None:
+            cands = [b for b in self._units
+                     if b not in self._done and self._raw_removed(sm, b) >= self._activation]
+            if cands:
+                self._active = max(cands, key=lambda b: self._raw_removed(sm, b))
 
-        # CREDIT: item left the bin AND the box rose to account for it.
-        changed = True
-        while changed:
-            changed = False
-            unaccounted = box_grams - self._accounted()
-            for b in order:
-                if (self._placed[b] < self._removed[b]
-                        and unaccounted >= self._units[b] - self._step_tol(b)):
-                    self._placed[b] += 1
-                    changed = True
-                    break
+        active = self._active
+        box = max(0.0, self._adj(sm, self._box_id))  # smoothed, tared box weight
+        prev_placed = self._placed.get(active, 0) if active else 0
 
-        # UN-CREDIT: item left the box, or was returned to the bin.
-        changed = True
-        while changed:
-            changed = False
-            overshoot = self._accounted() - box_grams
-            for b in order:
-                if self._placed[b] > 0 and (
-                    self._placed[b] > self._removed[b]
-                    or overshoot >= self._units[b] - self._step_tol(b)
-                ):
-                    self._placed[b] -= 1
-                    changed = True
-                    break
+        fault = None
+
+        # 3) wrong-bin faults: any non-active bin deviating from its expected state.
+        for b in self._units:
+            if b == active:
+                continue
+            expected = self._targets[b] if b in self._done else 0
+            r = self._removed[b]
+            added = sm.get(b, 0.0) > self._wrong * self._units[b]  # weight rose above full
+            if b in self._done:
+                if r < expected or added:
+                    fault = fault or self._fault("return-to-wrong-bin", b)
+                elif r > expected:
+                    fault = fault or self._fault("pick-from-wrong-bin", b)
+            else:  # available/locked, expected empty change
+                if added:
+                    fault = fault or self._fault("return-to-wrong-bin", b)
+                elif r >= 1:
+                    # In IDLE this bin would have been activated above; if we are
+                    # PICKING another bin, a drop here is a wrong-bin pick.
+                    if active is not None:
+                        fault = fault or self._fault("pick-from-wrong-bin", b)
+
+        # 4) active-bin counting + its faults
+        if active is not None:
+            unit = self._units[active]
+            raw_placed = (box - self._baseline_box) / unit
+            committed = self._baseline_box + prev_placed * unit
+            holding = self._removed[active] - prev_placed
+
+            # remove-from-kit: empty hands but the box dropped below what's counted.
+            if holding <= 0 and (box < committed - self._step_tol(active)):
+                fault = fault or self._fault("remove-from-kit", active)
+                # freeze the count while faulted (don't silently un-count)
+                placed = prev_placed
+            else:
+                placed = self._hysteretic(max(0.0, raw_placed), prev_placed)
+            self._placed[active] = placed
+
+            if placed > self._targets[active]:
+                fault = self._fault("overpack-kit", active)  # overrides; highest severity
+
+            # completion -> bank + advance (only when clean)
+            if (fault is None and placed == self._targets[active]
+                    and self._removed[active] == self._targets[active]):
+                self._done.add(active)
+                self._baseline_box = box
+                self._active = None
+                active = None
+        else:
+            # IDLE remove-from-kit: box dropped below the banked total, empty hands.
+            if box < self._baseline_box - max(self._step_floor, 1.0):
+                fault = fault or self._fault("remove-from-kit", None)
 
         placed = dict(self._placed)
         removed = dict(self._removed)
-        tgt = self._targets
+        overpick = {b: removed[b] - self._targets[b]
+                    for b in self._units if removed[b] > self._targets[b]}
 
-        # overpick = too many OUT of the bin (return to bin); overpack = too many IN the box (red).
-        overpick = {b: removed[b] - tgt.get(b, 0) for b in removed if removed[b] > tgt.get(b, 0)}
-        overpack = {b: placed[b] - tgt.get(b, 0) for b in placed if placed[b] > tgt.get(b, 0)}
-
-        # Done only when the right amount is in the box AND all extras are returned.
-        complete = bool(self._units) and all(
-            placed[b] == tgt.get(b, 0) and removed[b] == tgt.get(b, 0) for b in self._units
-        )
-        box_verified = abs(box_grams - self.expected_grams) <= self._box_tol
-
-        alert = None
-        if overpack:
-            worst = max(overpack, key=overpack.get)
-            alert = {
-                "type": "overpack-kit",
-                "bins": sorted(overpack),
-                "message": f"OVER-PACKED — remove {overpack[worst]} from the kit ({worst})",
-            }
-
-        if complete:
+        complete = bool(self._units) and len(self._done) == len(self._units)
+        if fault:
+            state = "FAULT"
+        elif complete:
             state = "KIT_COMPLETE"
-        elif overpack:
-            state = "OVERPACK"
-        elif any(placed.values()) or any(removed.values()):
+        elif self._active is not None:
             state = "PICKING"
         else:
-            state = "INIT"
+            state = "IDLE"
 
         return KitState(
-            placed=placed, removed=removed,
-            box_grams=round(box_grams, 1),
-            expected_grams=round(self.expected_grams, 1),
-            targets=dict(tgt), complete=complete, state=state,
-            box_verified=box_verified, overpick=overpick, overpack=overpack,
-            alert=alert,
+            placed=placed, removed=removed, targets=dict(self._targets),
+            active=self._active, done=sorted(self._done),
+            box_grams=round(box, 1), complete=complete, state=state,
+            overpick=overpick, alert=fault,
         )
+
+    def _fault(self, kind, binid):
+        msgs = {
+            "overpack-kit": (lambda n: f"OVER-PACKED — REMOVE {n} FROM KIT"),
+            "remove-from-kit": (lambda n: "ITEM REMOVED FROM KIT — RETURN IT"),
+            "pick-from-wrong-bin": (lambda n: f"WRONG BIN — DO NOT PICK FROM {binid}"),
+            "return-to-wrong-bin": (lambda n: f"WRONG BIN — RETURN ITEM TO {binid}"),
+        }
+        n = 0
+        if kind == "overpack-kit" and binid:
+            n = self._placed.get(binid, 0) - self._targets.get(binid, 0)
+        return {"type": kind, "bin": binid, "message": msgs[kind](n)}

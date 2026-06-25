@@ -363,6 +363,8 @@ class Pipeline:
             box_tolerance_g=box_cfg.get("box_tolerance_g"),
             box_step_tolerance_g=box_cfg.get("box_step_tolerance_g"),
             box_step_fraction=box_cfg.get("box_step_fraction", 0.15),
+            activation_frac=box_cfg.get("activation_frac", 0.5),
+            wrong_bin_frac=box_cfg.get("wrong_bin_frac", 0.5),
         )
         self._placement.tare(self._loadcells.get_weights())  # software zero at boot
 
@@ -407,14 +409,13 @@ class Pipeline:
         self._state.update_kit({
             "placed": kit.placed,
             "removed": kit.removed,
-            "box_grams": kit.box_grams,
-            "expected_grams": kit.expected_grams,
             "targets": kit.targets,
+            "active": kit.active,
+            "done": kit.done,
+            "box_grams": kit.box_grams,
             "complete": kit.complete,
             "state": kit.state,
-            "box_verified": kit.box_verified,
             "overpick": kit.overpick,
-            "overpack": kit.overpack,
             "alert": kit.alert,
             "box_id": self._placement.box_id,
         })

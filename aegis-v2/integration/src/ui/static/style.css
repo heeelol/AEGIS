@@ -175,6 +175,33 @@ h2 {
 .bin.complete .bin-id  { color: rgba(43, 212, 110, 0.75); }
 .bin.complete .quantity { color: var(--green); }
 
+/* ── Sequential FSM bin states ───────────────────────── */
+.bin.available { background: var(--white); border-color: #D5DCDA; }
+.bin.available .bin-id  { color: #586C67; }
+.bin.available .quantity { color: var(--ink-dark); }
+.bin.active {
+  background: var(--white); border-color: var(--hand);
+  box-shadow: 0 0 0 2px var(--hand);
+  animation: bin-pulse 1.3s ease-in-out infinite;
+}
+.bin.active .bin-id   { color: #586C67; }
+.bin.active .quantity { color: var(--ink-dark); font-weight: 800; }
+.bin.locked { background: var(--steel); border-color: var(--rule); opacity: 0.45; }
+.bin.locked .bin-id   { color: var(--ink-faint); }
+.bin.done {
+  background: linear-gradient(var(--green-dim), rgba(43, 212, 110, 0.20));
+  border-color: var(--green);
+}
+.bin.done .bin-id     { color: rgba(43, 212, 110, 0.75); }
+.bin.done .quantity   { color: var(--green); }
+.bin.done .bin-weight { color: var(--green); }
+.bin-lock { font-size: 22px; opacity: 0.7; margin: 4px 0; }
+.quantity.muted { opacity: 0.5; }
+@keyframes bin-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--hand); }
+  50%      { box-shadow: 0 0 0 6px rgba(70, 224, 192, 0.35); }
+}
+
 .bin.missing { background: var(--void); border: 1px dashed var(--rule-hi); }
 
 /* ── Hand-in-bin indicator ────────────────────────── */

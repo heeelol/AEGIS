@@ -15,21 +15,22 @@
 
 const POLL_INTERVAL = 250; // ms
 
-// ── Per-bin derivation (client-side, from raw fields + detected) ──
+// ── Per-bin derivation (client-side) ──
 // current = placed (verified in box); removed = taken out of the bin.
 function removedOf(b) { return (b.removed != null) ? b.removed : b.current; }
 // overpick = extras taken OUT of the bin (return to bin); not a red event.
 function returnCount(b) { return Math.max(0, removedOf(b) - b.total); }
 
-function binStatus(b, detected) {
+// Sequential FSM display state from kit.active / kit.done.
+function binUiState(b, detected, kit) {
   if (!detected) return "missing";
   if (!b.using || b.total <= 0) return "not_in_bom";
-  if (b.current > b.total) return "overpack";            // too many IN the box → red event
-  if (b.current === b.total && removedOf(b) === b.total) return "complete";  // in box + extras returned
-  return "incomplete";                                   // working (incl. extras still out of bin)
-}
-function isWrongBin(b, status) {
-  return b.is_active && (status === "not_in_bom" || status === "complete");
+  const done = (kit && kit.done) || [];
+  const active = kit && kit.active;
+  if (done.indexOf(b.id) !== -1) return "done";     // green, frozen
+  if (active === b.id) return "active";             // the one bin being picked
+  if (active) return "locked";                      // another bin active → soft-locked
+  return "available";                               // idle: operator may start it
 }
 
 // ── Main poll loop ──────────────────────────────────
@@ -53,8 +54,8 @@ async function poll() {
       for (const slot of layer.bins) detectedById[slot.id] = slot.detected !== false;
     }
 
-    renderBins(bins, layout, detectedById);
-    renderStatus(bins, detectedById, kit);
+    renderBins(bins, layout, detectedById, kit);
+    renderStatus(bins, kit);
     renderAlert(kit);
 
     document.getElementById("last-updated").textContent =
@@ -68,7 +69,7 @@ async function poll() {
 }
 
 // ── Bins (slot-proportional grid) ───────────────────
-function renderBins(bins, layout, detectedById) {
+function renderBins(bins, layout, detectedById, kit) {
   const container = document.getElementById("bins");
   container.innerHTML = "";
 
@@ -95,7 +96,7 @@ function renderBins(bins, layout, detectedById) {
     grid.style.gridTemplateColumns = "repeat(" + Math.max(layer.row_slots, 1) + ", 1fr)";
 
     for (const slot of layer.bins) {
-      const tile = makeBinTile(slot.id, byId[slot.id], slot.detected !== false);
+      const tile = makeBinTile(slot.id, byId[slot.id], slot.detected !== false, kit);
       tile.style.gridColumn = (slot.slot_start + 1) + " / span " + slot.span;
       grid.appendChild(tile);
     }
@@ -104,7 +105,7 @@ function renderBins(bins, layout, detectedById) {
   }
 }
 
-function makeBinTile(binId, b, detected) {
+function makeBinTile(binId, b, detected, kit) {
   const box = document.createElement("div");
 
   if (!detected) {
@@ -118,40 +119,47 @@ function makeBinTile(binId, b, detected) {
     return box;
   }
 
-  const status = binStatus(b, detected);
-  const wrong = isWrongBin(b, status);
-  box.className = "bin " + status + (wrong ? " wrong" : "");
+  const ui = binUiState(b, detected, kit);   // available | active | locked | done | not_in_bom
+  box.className = "bin " + ui;
 
   const label = b.label || b.id;
   let inner = '<div class="bin-id">' + label + '</div>';
 
-  if (status !== "not_in_bom") {
-    // Overpick: extras taken OUT of the bin → "↩ RETURN N" above the counter.
-    const ret = returnCount(b);
-    if (ret > 0) inner += '<div class="return-badge">↩ RETURN ' + ret + '</div>';
-    const cur = status === "overpack"
-      ? '<span class="over">' + b.current + '</span>'
-      : String(b.current);
-    inner += '<div class="quantity">' + cur + '/' + b.total + '</div>';
+  if (ui === "not_in_bom") { box.innerHTML = inner; return box; }
+
+  if (ui === "locked") {
+    inner += '<div class="bin-lock">🔒</div>';
+    inner += '<div class="quantity muted">' + b.current + '/' + b.total + '</div>';
+    box.innerHTML = inner;
+    return box;
   }
 
-  // Live load-cell weight (grams) — shown for bins with a cell so the sensor can
-  // be verified in real time. Bins without a cell read 0 and aren't in the job,
-  // so they stay clean.
+  // available / active / done
+  if (ui === "active") {
+    // Overpick: extras taken OUT of the active bin → "↩ RETURN N" above the counter.
+    const ret = returnCount(b);
+    if (ret > 0) inner += '<div class="return-badge">↩ RETURN ' + ret + '</div>';
+  }
+  inner += '<div class="quantity">' + b.current + '/' + b.total + '</div>';
+
+  // Live load-cell weight (grams) for sensor verification.
   if (b.weight !== undefined && (b.using || Math.abs(b.weight) > 0.05)) {
     inner += '<div class="bin-weight">' + (+b.weight).toFixed(1) + ' g</div>';
   }
 
   if (b.is_active && b.handedness) {
-    // Place the flag on the side the hand should approach from: left hand → left.
     const side = b.handedness[0].toLowerCase() === "l" ? "hand-left" : "hand-right";
     inner += '<div class="hand-flag ' + side + '">✋ ' + b.handedness[0].toUpperCase() + '</div>';
   }
-  if (wrong) inner += '<div class="cross"></div>';
 
-  inner += makeOverrideControls(b.id);
-  box.innerHTML = inner;
-  wireOverrideControls(box, b.id);
+  // Manual override only on the active bin (the only one being picked).
+  if (ui === "active") {
+    inner += makeOverrideControls(b.id);
+    box.innerHTML = inner;
+    wireOverrideControls(box, b.id);
+  } else {
+    box.innerHTML = inner;
+  }
   return box;
 }
 
@@ -180,56 +188,35 @@ async function overridePick(binId, delta) {
 }
 
 // ── Status bar + Complete button ────────────────────
-function renderStatus(bins, detectedById, kit) {
+function renderStatus(bins, kit) {
   const bar = document.getElementById("statusbar");
   const msgEl = document.getElementById("status-msg");
   const completeBtn = document.getElementById("complete-btn");
 
-  const wrong = [];
-  const over = [];
-  const inJob = [];
-  let pickNext = null;
-
-  for (const b of bins) {
-    const detected = detectedById[b.id] !== false;
-    const s = binStatus(b, detected);
-    if (s === "missing" || s === "not_in_bom") continue;
-    inJob.push(b);
-    const label = b.label || b.id;
-    if (isWrongBin(b, s)) wrong.push(label);
-    if (returnCount(b) > 0) over.push({ label, n: returnCount(b) });   // overpick: return to bin
-    if (s === "incomplete" && b.current < b.total) {
-      const left = b.total - b.current;
-      if (pickNext === null || left > pickNext.left) pickNext = { label, left };
-    }
-  }
-
-  const allDone = inJob.length > 0 &&
-    inJob.every(b => b.current === b.total && removedOf(b) === b.total);
+  const inJob = bins.filter(b => b.using && b.total > 0);
+  const active = kit && kit.active;
+  const complete = kit && kit.state ? !!kit.complete
+    : (inJob.length > 0 && inJob.every(b => b.current === b.total && removedOf(b) === b.total));
 
   let message, mode;
   if (!inJob.length) {
     message = "Waiting for calibration…"; mode = "";
-  } else if (wrong.length) {
-    message = "REMOVE HAND FROM BIN " + wrong[0]; mode = "action";
-  } else if (over.length) {
-    const o = over[0];
-    message = "RETURN " + o.n + " ITEM" + (o.n === 1 ? "" : "S") + " TO BIN " + o.label; mode = "action";
-  } else if (pickNext) {
-    message = "PICK " + pickNext.left + " FROM BIN " + pickNext.label; mode = "";
-  } else {
+  } else if (kit && kit.alert) {
+    message = kit.alert.message; mode = "action";          // also shown full-screen
+  } else if (complete) {
     message = "ALL BINS COMPLETE — READY TO CLOSE"; mode = "ready";
+  } else if (active) {
+    const b = bins.find(x => x.id === active);
+    const ret = b ? returnCount(b) : 0;
+    if (ret > 0) { message = "RETURN " + ret + " TO BIN " + active; mode = "action"; }
+    else { message = "PICK " + (b ? b.total - b.current : 0) + " FROM BIN " + active; mode = ""; }
+  } else {
+    message = "PICK FROM ANY BIN"; mode = "";
   }
-
-  // Completion is authoritative from the kit FSM when load cells are live
-  // (both targets met AND box total matches); otherwise fall back to bin counts.
-  const kitComplete = (kit && kit.state)
-    ? !!kit.complete
-    : (allDone && !wrong.length && !over.length);
 
   msgEl.textContent = message;
   bar.className = "statusbar" + (mode ? " " + mode : "");
-  completeBtn.classList.toggle("hidden", !(kitComplete && !wrong.length));
+  completeBtn.classList.toggle("hidden", !complete);
 }
 
 // ── Full-screen red fault overlay ───────────────────

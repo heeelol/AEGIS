@@ -136,14 +136,16 @@ sensing:
       bin_1_0: bin_1_2    # 10 kg receptor → 67.1 g items
       bin_1_1: kit_box    # added 5 kg receptor → kitting box (off-camera)
     # Kitting box = the 4th load receptor (separate 5 kg cell, off-camera).
-    # A bin's count only rises when the box VERIFIES the item is in it (the weight
-    # that left the bin arrives in the box). This is done on the box weight's
-    # *change from a committed baseline*, so small items count reliably (a +3.6 g
-    # step is resolvable even with 200 g already in the box). See sensing/placement.py.
+    # SEQUENTIAL single-bin FSM: one bin is active at a time, so the box's weight
+    # change can only come from that item type (no cross-bin ambiguity). The active
+    # bin's count = round((box − banked_baseline) / unit). See sensing/placement.py
+    # and docs/superpowers/specs/2026-06-25-sequential-single-bin-kitting-fsm.md.
     kit_box:
       box_id: kit_box
+      activation_frac: 0.5        # a bin goes ACTIVE once it drops ≥ this fraction of an item
+      wrong_bin_frac: 0.5         # a non-active bin changing ≥ this fraction → wrong-bin fault
       box_step_tolerance_g: 1.8   # box step may fall this short of a unit and still count
-      box_tolerance_g: 8.0        # whole-box ≈ expected within this → "verified" (display)
+      box_step_fraction: 0.15     # + this fraction of the unit (big items get more slack)
       ema_alpha: 0.4              # weight smoothing: higher = snappier, lower = smoother
       hysteresis: 0.25            # anti-flicker deadband (fraction of an item)
 
