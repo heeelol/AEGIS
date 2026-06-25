@@ -16,12 +16,17 @@
 const POLL_INTERVAL = 250; // ms
 
 // ── Per-bin derivation (client-side, from raw fields + detected) ──
+// current = placed (verified in box); removed = taken out of the bin.
+function removedOf(b) { return (b.removed != null) ? b.removed : b.current; }
+// overpick = extras taken OUT of the bin (return to bin); not a red event.
+function returnCount(b) { return Math.max(0, removedOf(b) - b.total); }
+
 function binStatus(b, detected) {
   if (!detected) return "missing";
   if (!b.using || b.total <= 0) return "not_in_bom";
-  if (b.current > b.total) return "overpick";
-  if (b.current >= b.total) return "complete";
-  return "incomplete";
+  if (b.current > b.total) return "overpack";            // too many IN the box → red event
+  if (b.current === b.total && removedOf(b) === b.total) return "complete";  // in box + extras returned
+  return "incomplete";                                   // working (incl. extras still out of bin)
 }
 function isWrongBin(b, status) {
   return b.is_active && (status === "not_in_bom" || status === "complete");
@@ -50,6 +55,7 @@ async function poll() {
 
     renderBins(bins, layout, detectedById);
     renderStatus(bins, detectedById, kit);
+    renderAlert(kit);
 
     document.getElementById("last-updated").textContent =
       "Updated " + new Date().toLocaleTimeString();
@@ -120,11 +126,10 @@ function makeBinTile(binId, b, detected) {
   let inner = '<div class="bin-id">' + label + '</div>';
 
   if (status !== "not_in_bom") {
-    // On overpick, show a small "return N" indicator above the counter.
-    if (status === "overpick") {
-      inner += '<div class="return-badge">↩ RETURN ' + (b.current - b.total) + '</div>';
-    }
-    const cur = status === "overpick"
+    // Overpick: extras taken OUT of the bin → "↩ RETURN N" above the counter.
+    const ret = returnCount(b);
+    if (ret > 0) inner += '<div class="return-badge">↩ RETURN ' + ret + '</div>';
+    const cur = status === "overpack"
       ? '<span class="over">' + b.current + '</span>'
       : String(b.current);
     inner += '<div class="quantity">' + cur + '/' + b.total + '</div>';
@@ -192,14 +197,15 @@ function renderStatus(bins, detectedById, kit) {
     inJob.push(b);
     const label = b.label || b.id;
     if (isWrongBin(b, s)) wrong.push(label);
-    if (s === "overpick") over.push({ label, n: b.current - b.total });
-    if (s === "incomplete") {
+    if (returnCount(b) > 0) over.push({ label, n: returnCount(b) });   // overpick: return to bin
+    if (s === "incomplete" && b.current < b.total) {
       const left = b.total - b.current;
       if (pickNext === null || left > pickNext.left) pickNext = { label, left };
     }
   }
 
-  const allDone = inJob.length > 0 && inJob.every(b => b.current === b.total);
+  const allDone = inJob.length > 0 &&
+    inJob.every(b => b.current === b.total && removedOf(b) === b.total);
 
   let message, mode;
   if (!inJob.length) {
@@ -211,10 +217,6 @@ function renderStatus(bins, detectedById, kit) {
     message = "RETURN " + o.n + " ITEM" + (o.n === 1 ? "" : "S") + " TO BIN " + o.label; mode = "action";
   } else if (pickNext) {
     message = "PICK " + pickNext.left + " FROM BIN " + pickNext.label; mode = "";
-  } else if (kit && kit.state && !kit.complete) {
-    // Bins met their targets but the box weight hasn't confirmed yet.
-    const bg = (+kit.box_grams || 0).toFixed(0), eg = (+kit.expected_grams || 0).toFixed(0);
-    message = "VERIFY KITTING BOX — " + bg + " / " + eg + " g"; mode = "";
   } else {
     message = "ALL BINS COMPLETE — READY TO CLOSE"; mode = "ready";
   }
@@ -228,6 +230,22 @@ function renderStatus(bins, detectedById, kit) {
   msgEl.textContent = message;
   bar.className = "statusbar" + (mode ? " " + mode : "");
   completeBtn.classList.toggle("hidden", !(kitComplete && !wrong.length));
+}
+
+// ── Full-screen red fault overlay ───────────────────
+// Shown for the four hard-fault events (currently load-cell-detectable:
+// overpack-kit). pick/return-wrong-bin + remove-from-kit hook in here too once
+// the backend emits them as kit.alert.
+function renderAlert(kit) {
+  const overlay = document.getElementById("alert-overlay");
+  if (!overlay) return;
+  const alert = kit && kit.alert;
+  if (alert && alert.message) {
+    document.getElementById("alert-msg").textContent = alert.message;
+    overlay.classList.remove("hidden");
+  } else {
+    overlay.classList.add("hidden");
+  }
 }
 
 // ── Confirm-kit flow (wired once) ───────────────────

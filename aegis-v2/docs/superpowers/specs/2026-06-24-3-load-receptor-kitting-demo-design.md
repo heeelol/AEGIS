@@ -40,14 +40,27 @@ tracking the box's **change from a committed baseline**:
 Because it's a *delta from the committed baseline*, a +3.6 g step is resolvable even with 200 g
 already in the box — the v1 failure mode is gone (verified by `test_small_item_counts_on_top_of_heavy_box`).
 
-## FSM
-`INIT` (bins full, box empty) → `PICKING` → per-bin `COMPLETE` when verified count == target →
-`OVERPICK` when count > target (bin shows "↩ RETURN N"; status bar too) → `KIT_COMPLETE` when
-**all BOM bins == target, no overpick** → Complete-kit (`POST /api/kit/complete`) re-tares all
-receptors, resets counts, returns to INIT. Counts refresh every ~3 frames (was 30).
+### Overpick vs overpack (distinct!)
+- **overpick** = `removed > target` — too many taken OUT of the bin. Bin shows "↩ RETURN N"
+  above the counter. NOT a red event.
+- **overpack** = `placed > target` — too many IN the kit box. One of the **four full-red-screen
+  faults** (`pick-from-wrong-bin`, `return-to-wrong-bin`, `remove-from-kit`, **`overpack-kit`**),
+  surfaced via `kit.alert` → a full-screen red overlay. Only overpack-kit is load-cell-detectable
+  today; the others hook into the same `alert` once vision emits them.
 
-UI: the kitting-box panel is **removed** (box is sensing-only); each bin shows a small **"↩ RETURN N"**
-badge above its counter on overpick.
+A bin is **green only when `placed == target` AND `removed == target`** (in the box AND extras returned).
+
+### Large-bin accuracy fix
+Credit tolerance scales with item size: `step_tol = max(box_step_tolerance_g, box_step_fraction · unit)`
+— a big item's box step is noisier in absolute grams, so it needs more slack; the small bin stays tight.
+
+## FSM
+`INIT` → `PICKING` → per-bin done when `placed == removed == target` → `OVERPACK` + red overlay
+when `placed > target` → `KIT_COMPLETE` when all bins `placed==removed==target` → Complete-kit
+(`POST /api/kit/complete`) re-tares, resets, returns to INIT. Counts refresh ~3 frames.
+
+UI: kitting-box panel **removed**; per-bin **"↩ RETURN N"** on overpick; full-screen **red overlay**
+on overpack.
 
 ## Changes
 - **config/settings.yaml**: `work_order.targets` → only bin_1_0 & bin_0_0 nonzero; `loadcells.bin_remap`

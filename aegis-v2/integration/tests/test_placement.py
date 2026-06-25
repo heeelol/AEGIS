@@ -40,8 +40,8 @@ def test_removed_but_not_in_box_does_not_count():
     # Item lifted out of the bin but NOT placed in the box -> no count (verified-only).
     s = settle(tracker(), w(b04=-3.6, box=0))
     assert s.removed["bin_0_4"] == 1
-    assert s.placed["bin_0_4"] == 0
-    assert s.state == "INIT"
+    assert s.placed["bin_0_4"] == 0          # not counted until verified in the box
+    assert s.state == "PICKING"              # work started (item out), just not placed yet
 
 
 def test_small_item_counts_when_verified_in_box():
@@ -86,11 +86,28 @@ def test_hysteresis_no_flicker():
         assert s.placed["bin_0_4"] == 1
 
 
-def test_overpick_shows_return_count():
+def test_overpick_returns_to_bin_not_red():
+    # 4 taken out of the bin but only 3 placed in the box (one held back).
+    # removed > target -> overpick (return to bin); placed == target -> NO overpack, NO red.
+    s = settle(tracker(), w(b12=-4 * 67.1, box=3 * 67.1))
+    assert s.removed["bin_1_2"] == 4 and s.placed["bin_1_2"] == 3
+    assert s.overpick == {"bin_1_2": 1} and s.overpack == {}
+    assert s.alert is None
+
+
+def test_overpack_triggers_red_alert():
+    # 4 placed in the box (target 3) -> overpack -> full-red event.
     s = settle(tracker(), w(b12=-4 * 67.1, box=4 * 67.1))
     assert s.placed["bin_1_2"] == 4
-    assert s.overpick == {"bin_1_2": 1}          # return 1
-    assert s.state == "OVERPICK" and not s.complete
+    assert s.overpack == {"bin_1_2": 1}
+    assert s.state == "OVERPACK" and s.alert and s.alert["type"] == "overpack-kit"
+
+
+def test_large_item_counts_with_noisy_box():
+    # The box reads ~6 g low for the 67 g item; the per-item step tolerance
+    # (scales with unit) still credits it — the "large bin inaccurate" fix.
+    s = settle(tracker(), w(b12=-67.1, box=61.0))
+    assert s.placed["bin_1_2"] == 1
 
 
 def test_full_kit_completes():

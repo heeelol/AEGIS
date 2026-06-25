@@ -4,44 +4,44 @@ Placement Tracker (box-verified, conservation-based counting)
 Counts items for the kitting demo across 4 load receptors: 3 source bins (each
 one item type, on its own cell) + 1 kitting box.
 
-A bin's count only rises when the box **verifies** the item is in it — by
-conservation of mass: the weight that LEFT the bin must ARRIVE in the box.
+A bin's **placed** count rises only when the box VERIFIES the item is in it: the
+weight that left the bin must arrive in the box. We track the box weight's change
+from a committed baseline, so small items count even on top of a heavy box.
 
-  qty[bin] = (matched box increase) / unit_g[bin]
+Two distinct "too many" conditions (do NOT conflate them):
+  * **overpick**  = removed > target  (too many taken OUT of the bin). The bin
+    shows "↩ RETURN N" so the extras go back. Not a red-screen event.
+  * **overpack**  = placed  > target  (too many IN the kit box). One of the four
+    full-red-screen faults — surfaced via ``alert``.
 
-Why this is robust for small items (the previous absolute-decomposition wasn't):
-we track the box weight **relative to a committed baseline** (the weight already
-accounted for by counted items). A newly-placed item is a small *delta* from that
-baseline — a +3.6 g step is resolvable even when the box already holds 200 g —
-whereas decomposing the absolute 203.6 g loses the 3.6 g in noise.
+A bin is "done" (green) only when ``placed == target AND removed == target``
+(right amount in the box AND all extras returned).
 
-Mechanics per update (all weights EMA-smoothed; bin counts hysteresis-debounced):
-  * removed[bin]  = round(-bin_weight / unit)         — items out of each bin (its own cell)
-  * unaccounted   = box_weight - Σ placed·unit        — box weight not yet credited
-  * CREDIT a bin (largest unit first, so the right item matches the box step) when
-    an item left it (placed < removed) AND unaccounted ≥ its unit  → item verified in box.
-  * UN-CREDIT when the item leaves the box (box drops) or returns to the bin.
-
-Overpick = placed > target → the bin shows how many to RETURN. Kit completes when
-every BOM bin's verified count equals its target. ``tare()`` re-baselines.
+Per-item step tolerance: the box step for a big item is noisier in absolute grams
+than for a small one, so the credit tolerance scales with the item
+(``max(floor, fraction · unit)``) — fixes the large bin being inaccurate while
+keeping small items crisp.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
 class KitState:
-    placed: dict[str, int]           # bin_id -> items verified in the box from that bin
-    removed: dict[str, int]          # bin_id -> items currently out of that bin
-    box_grams: float                 # current (tared, smoothed) box weight
-    expected_grams: float            # target total weight in the box
+    placed: dict[str, int]           # items verified in the box, per bin
+    removed: dict[str, int]          # items currently out of the bin, per bin
+    box_grams: float
+    expected_grams: float
     targets: dict[str, int]
     complete: bool
-    state: str                       # INIT|PICKING|OVERPICK|KIT_COMPLETE
-    box_verified: bool = False       # box total ≈ expected (display cross-check)
-    overpick: dict[str, int] = field(default_factory=dict)  # bin_id -> items to return
+    state: str                       # INIT|PICKING|OVERPACK|KIT_COMPLETE
+    box_verified: bool = False
+    overpick: dict[str, int] = field(default_factory=dict)   # removed-target (return to bin)
+    overpack: dict[str, int] = field(default_factory=dict)   # placed-target (red: remove from kit)
+    alert: Optional[dict] = None     # active full-red event, e.g. {type,message,bins}
 
 
 class PlacementTracker:
@@ -55,6 +55,7 @@ class PlacementTracker:
         hysteresis: float = 0.25,
         box_tolerance_g: float | None = None,
         box_step_tolerance_g: float | None = None,
+        box_step_fraction: float = 0.15,
     ):
         self._units = {b: float(u) for b, u in units_g.items() if u and u > 0}
         self._targets = {b: int(t) for b, t in targets.items()}
@@ -63,12 +64,13 @@ class PlacementTracker:
         self._h = float(hysteresis)
 
         smallest = min(self._units.values(), default=1.0)
-        # How much the box step may fall short of a unit and still credit it.
-        self._step_tol = (
+        # Credit tolerance = max(floor, fraction · unit): big items get a larger
+        # absolute slack (their box step is noisier), small items stay tight.
+        self._step_floor = (
             float(box_step_tolerance_g) if box_step_tolerance_g is not None
             else 0.5 * smallest
         )
-        # Generous tolerance for the whole-box "verified" display flag.
+        self._step_frac = float(box_step_fraction)
         self._box_tol = (
             float(box_tolerance_g) if box_tolerance_g is not None
             else max(5.0, 1.5 * smallest)
@@ -87,6 +89,9 @@ class PlacementTracker:
     @property
     def expected_grams(self) -> float:
         return sum(self._targets.get(b, 0) * u for b, u in self._units.items())
+
+    def _step_tol(self, b: str) -> float:
+        return max(self._step_floor, self._step_frac * self._units[b])
 
     def tare(self, weights: dict[str, float]) -> None:
         self._offsets = {k: float(v) for k, v in weights.items()}
@@ -118,28 +123,26 @@ class PlacementTracker:
     def update(self, weights: dict[str, float]) -> KitState:
         sm = self._smooth(weights)
 
-        # Items out of each bin (own cell, debounced).
         for b, unit in self._units.items():
             raw = max(0.0, -sm.get(b, 0.0)) / unit
             self._removed[b] = self._hysteretic(raw, self._removed[b])
 
         box_grams = max(0.0, sm.get(self._box_id, 0.0))
-        # Largest unit first so a big item's box step isn't eaten by small items.
-        order = sorted(self._units, key=lambda b: -self._units[b])
+        order = sorted(self._units, key=lambda b: -self._units[b])  # largest unit first
 
-        # CREDIT: item left the bin AND the box has risen to account for it.
+        # CREDIT: item left the bin AND the box rose to account for it.
         changed = True
         while changed:
             changed = False
             unaccounted = box_grams - self._accounted()
             for b in order:
                 if (self._placed[b] < self._removed[b]
-                        and unaccounted >= self._units[b] - self._step_tol):
+                        and unaccounted >= self._units[b] - self._step_tol(b)):
                     self._placed[b] += 1
                     changed = True
                     break
 
-        # UN-CREDIT: item left the box (box dropped) or was returned to the bin.
+        # UN-CREDIT: item left the box, or was returned to the bin.
         changed = True
         while changed:
             changed = False
@@ -147,38 +150,49 @@ class PlacementTracker:
             for b in order:
                 if self._placed[b] > 0 and (
                     self._placed[b] > self._removed[b]
-                    or overshoot >= self._units[b] - self._step_tol
+                    or overshoot >= self._units[b] - self._step_tol(b)
                 ):
                     self._placed[b] -= 1
                     changed = True
                     break
 
         placed = dict(self._placed)
-        overpick = {
-            b: placed[b] - self._targets.get(b, 0)
-            for b in placed if placed[b] > self._targets.get(b, 0)
-        }
-        targets_met = all(placed.get(b, 0) == self._targets.get(b, 0) for b in self._units)
-        complete = bool(self._units) and targets_met and not overpick
+        removed = dict(self._removed)
+        tgt = self._targets
+
+        # overpick = too many OUT of the bin (return to bin); overpack = too many IN the box (red).
+        overpick = {b: removed[b] - tgt.get(b, 0) for b in removed if removed[b] > tgt.get(b, 0)}
+        overpack = {b: placed[b] - tgt.get(b, 0) for b in placed if placed[b] > tgt.get(b, 0)}
+
+        # Done only when the right amount is in the box AND all extras are returned.
+        complete = bool(self._units) and all(
+            placed[b] == tgt.get(b, 0) and removed[b] == tgt.get(b, 0) for b in self._units
+        )
         box_verified = abs(box_grams - self.expected_grams) <= self._box_tol
+
+        alert = None
+        if overpack:
+            worst = max(overpack, key=overpack.get)
+            alert = {
+                "type": "overpack-kit",
+                "bins": sorted(overpack),
+                "message": f"OVER-PACKED — remove {overpack[worst]} from the kit ({worst})",
+            }
 
         if complete:
             state = "KIT_COMPLETE"
-        elif overpick:
-            state = "OVERPICK"
-        elif any(placed.values()):
+        elif overpack:
+            state = "OVERPACK"
+        elif any(placed.values()) or any(removed.values()):
             state = "PICKING"
         else:
             state = "INIT"
 
         return KitState(
-            placed=placed,
-            removed=dict(self._removed),
+            placed=placed, removed=removed,
             box_grams=round(box_grams, 1),
             expected_grams=round(self.expected_grams, 1),
-            targets=dict(self._targets),
-            complete=complete,
-            state=state,
-            box_verified=box_verified,
-            overpick=overpick,
+            targets=dict(tgt), complete=complete, state=state,
+            box_verified=box_verified, overpick=overpick, overpack=overpack,
+            alert=alert,
         )

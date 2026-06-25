@@ -207,6 +207,7 @@ class PipelineState:
     def get_bins(self) -> list[dict]:
         with self._lock:
             result = []
+            removed_map = self._kit.get("removed", {}) if self._kit else {}
             for b in self._bins.values():
                 status = self._calculate_bin_status(b)
                 layer, col = self._parse_bin_id(b.bin_id)
@@ -215,7 +216,8 @@ class PipelineState:
                     "label": b.label,
                     "layer": layer,
                     "col": col,
-                    "current": b.pick_count,
+                    "current": b.pick_count,           # placed (verified in box)
+                    "removed": removed_map.get(b.bin_id, b.pick_count),  # taken out of bin
                     "total": b.target_count,
                     "status": status,
                     "using": b.using,

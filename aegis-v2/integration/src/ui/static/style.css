@@ -161,9 +161,9 @@ h2 {
 .bin.incomplete .bin-id  { color: #586C67; }
 .bin.incomplete .quantity { color: var(--ink-dark); }
 
-.bin.overpick { background: var(--white); border-color: var(--alert); }
-.bin.overpick .bin-id { color: #586C67; }
-.bin.overpick .quantity { color: var(--ink-dark); }
+.bin.overpack { background: var(--white); border-color: var(--alert); }
+.bin.overpack .bin-id { color: #586C67; }
+.bin.overpack .quantity { color: var(--ink-dark); }
 
 .bin.not_in_bom { background: var(--grey); border-color: var(--rule-hi); }
 .bin.not_in_bom .bin-id { color: var(--ink-dim); }
@@ -192,7 +192,7 @@ h2 {
 .hand-flag.hand-right { right: 8px; }
 /* On white-filled tiles, flip to a dark chip so it contrasts. */
 .bin.incomplete .hand-flag,
-.bin.overpick .hand-flag {
+.bin.overpack .hand-flag {
   background: var(--ink-dark); color: var(--white); border-color: var(--ink-dark);
 }
 
@@ -229,9 +229,9 @@ h2 {
 .ov-btn:hover { background: rgba(0,0,0,0.7); border-color: var(--hand); }
 .ov-btn:active { transform: scale(0.95); }
 .bin.incomplete .ov-btn,
-.bin.overpick .ov-btn { background: rgba(20,32,30,0.10); color: var(--ink-dark); border-color: rgba(20,32,30,0.18); }
+.bin.overpack .ov-btn { background: rgba(20,32,30,0.10); color: var(--ink-dark); border-color: rgba(20,32,30,0.18); }
 .bin.incomplete .ov-btn:hover,
-.bin.overpick .ov-btn:hover { background: rgba(20,32,30,0.22); }
+.bin.overpack .ov-btn:hover { background: rgba(20,32,30,0.22); }
 
 /* ── Status bar + Complete button ─────────────────── */
 
@@ -302,6 +302,25 @@ h2 {
   * { animation: none !important; transition: none !important; }
 }
 
+/* ── Full-screen red fault overlay (overpack & co.) ─── */
+.alert-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 59, 48, 0.92);
+  animation: alert-pulse 0.7s ease-in-out infinite alternate;
+}
+.alert-overlay.hidden { display: none; }
+.alert-box { text-align: center; color: #fff; padding: 48px; }
+.alert-icon { font-size: 84px; line-height: 1; }
+.alert-text {
+  font-family: var(--mono); font-weight: 700; font-size: 30px;
+  letter-spacing: 2px; margin-top: 22px; text-transform: uppercase;
+}
+@keyframes alert-pulse {
+  from { background: rgba(255, 59, 48, 0.82); }
+  to   { background: rgba(190, 18, 12, 0.96); }
+}
+
 /* ── Per-bin "return N" indicator (overpick) ────────── */
 .return-badge {
   font-family: var(--mono); font-size: 10px; font-weight: 700;
@@ -316,7 +335,7 @@ h2 {
   color: var(--ink-dim); margin-top: 2px; letter-spacing: 0.5px;
 }
 .bin.complete .bin-weight { color: var(--green); }
-.bin.overpick .bin-weight { color: var(--alert); }
+.bin.overpack .bin-weight { color: var(--alert); }
 
 /* ── Kitting box (3rd load receptor) ────────────────── */
 .kitbox-zone { flex: 0 0 auto; margin-top: 16px; }

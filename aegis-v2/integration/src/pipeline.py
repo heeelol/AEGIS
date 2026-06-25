@@ -362,6 +362,7 @@ class Pipeline:
             hysteresis=box_cfg.get("hysteresis", 0.25),
             box_tolerance_g=box_cfg.get("box_tolerance_g"),
             box_step_tolerance_g=box_cfg.get("box_step_tolerance_g"),
+            box_step_fraction=box_cfg.get("box_step_fraction", 0.15),
         )
         self._placement.tare(self._loadcells.get_weights())  # software zero at boot
 
@@ -413,6 +414,8 @@ class Pipeline:
             "state": kit.state,
             "box_verified": kit.box_verified,
             "overpick": kit.overpick,
+            "overpack": kit.overpack,
+            "alert": kit.alert,
             "box_id": self._placement.box_id,
         })
 
