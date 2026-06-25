@@ -240,19 +240,33 @@ class Pipeline:
                     "workstation grid, '2' to initialise the kit")
 
     def _load_obb_model(self) -> None:
-        """Load the native OBB bin model once at startup (fails soft to ``None``)."""
-        from integration.src.detectors import initialize_bins_obb as obb
-        self._obb = obb
-        model_path = self._config.get("bin_detector", {}).get("model_path")
+        """Load the bin detection model once at startup (fails soft to ``None``).
+
+        ``bin_detector.task`` selects the detector: ``"obb"`` (default, oriented
+        boxes) or ``"detect"`` (axis-aligned YOLOv8 detect, e.g. FSV3). Both
+        return the same ``[{id, corners, center, area, conf}]`` shape, so the rest
+        of the flow is identical.
+        """
+        det_cfg = self._config.get("bin_detector", {})
+        task = str(det_cfg.get("task", "obb")).lower()
+        if task == "detect":
+            from integration.src.detectors import initialize_bins_detect as det
+            self._obb = det
+        else:
+            from integration.src.detectors import initialize_bins_obb as obb
+            self._obb = obb
+        model_path = det_cfg.get("model_path")
         if model_path:
             p = Path(model_path)
             if not p.is_absolute():
                 p = _ROOT / model_path        # _ROOT = aegis-v2/
             model_path = str(p)
-        self._obb_model = obb.load_model(model_path)
+        self._obb_model = self._obb.load_model(model_path)
         if self._obb_model is None:
-            logger.warning("OBB model unavailable — calibration ('1') will find no "
-                           "bins until weights/ultralytics are present")
+            logger.warning("Bin model unavailable (task=%s) — calibration ('1') will "
+                           "find no bins until weights/ultralytics are present", task)
+        else:
+            logger.info("Bin detection task: %s", task)
 
     @staticmethod
     def _build_manual_geofences(

@@ -13,9 +13,12 @@ camera:
 
 # --- Bin Boundary Detector (from cv-models) ------
 bin_detector:
-  # Native OBB (oriented bounding box) bin model. Relative paths resolve against
-  # the aegis-v2 root, so the pipeline can launch from any working directory.
-  model_path: "./cv-models/models/weights/project_9_yolov8_obb_1.pt"
+  # task selects the detector: "obb" (oriented boxes, project_9 model) or "detect"
+  # (axis-aligned YOLOv8, e.g. the aegis-core FSV3 model). Relative paths resolve
+  # against the aegis-v2 root, so the pipeline can launch from any working directory.
+  task: "detect"
+  model_path: "./cv-models/models/weights/fsv3_detect.pt"
+  # OBB fallback → task: "obb"  +  model_path: "./cv-models/models/weights/project_9_yolov8_obb_1.pt"
   confidence_threshold: 0.5
   iou_threshold: 0.45
   device: "cpu"                   # "cpu" or "cuda:0"
