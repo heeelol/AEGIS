@@ -25,17 +25,24 @@ was removed from it, so final counts stay correct (only a single in-flight item 
 momentarily mis-credited between those two).
 
 ## Counting logic (placement-driven)
-1. The **box cell is the trigger**: when box weight rises by ≈ one item's `unit_g`, a placement occurred.
-2. **Attribute** the placement to the BOM bin whose weight dropped by ≈ its own `unit_g` in the same
-   window (distinct weights 63.7 vs 3.6 make this unambiguous; box delta is a cross-check).
-3. Increment that bin's **placed-count** (the `current` shown as `current/target`).
-   Removing from a bin without placing does nothing.
+**Revised 2026-06-25 — per-bin counting (was box-decomposition):** the original
+design decomposed the box weight into per-item counts. That failed in practice: a single
+5 kg box cell can't resolve a 3.6 g (or 16.6 g) item added on top of a heavy one, so small
+items were swallowed by box noise and only the 67 g bin counted. Robust replacement:
+
+1. **Count each BOM bin from its OWN cell** (range-matched: 1 kg cell for 3.6 g parts, etc.):
+   `count = round(-bin_weight / unit_g)`. Reliable for small and large items alike.
+2. **EMA-smooth** the weights and apply **hysteresis** (a deadband around each .5 boundary)
+   so sensor jitter never flickers the count.
+3. **The box weight is a verification cross-check only** (`box_verified` = box ≈ expected,
+   within a generous `box_tolerance_g`). It is displayed but never drives or gates counts.
 
 ## FSM
-`INIT` (box tared empty, bins full) → `PICKING` → per-bin `COMPLETE` when placed == target →
-`OVERPICK` when placed > target (status bar: "RETURN N ITEMS TO BIN X") → `KIT_COMPLETE` when both
-BOM bins == target AND |box_total − 201.9| ≤ tol → Complete-kit (`POST /api/kit/complete`) tares box,
-resets counts, returns to INIT.
+`INIT` (bins full) → `PICKING` → per-bin `COMPLETE` when count == target → `OVERPICK` when
+count > target (status bar: "RETURN N ITEMS TO BIN X") → `KIT_COMPLETE` when **all BOM bins ==
+target, no overpick** (box shown as ✓verified cross-check, not a gate) → Complete-kit
+(`POST /api/kit/complete`) re-tares all receptors, resets counts, returns to INIT.
+Counts refresh every ~3 frames (was 30) for a responsive counter.
 
 ## Changes
 - **config/settings.yaml**: `work_order.targets` → only bin_1_0 & bin_0_0 nonzero; `loadcells.bin_remap`

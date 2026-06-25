@@ -358,6 +358,9 @@ class Pipeline:
             units, bom_targets,
             box_cfg.get("box_id", "kit_box"),
             box_cfg.get("tolerance_g"),
+            ema_alpha=box_cfg.get("ema_alpha", 0.4),
+            hysteresis=box_cfg.get("hysteresis", 0.25),
+            box_tolerance_g=box_cfg.get("box_tolerance_g"),
         )
         self._placement.tare(self._loadcells.get_weights())  # software zero at boot
 
@@ -407,6 +410,7 @@ class Pipeline:
             "targets": kit.targets,
             "complete": kit.complete,
             "state": kit.state,
+            "box_verified": kit.box_verified,
             "overpick": kit.overpick,
             "box_id": self._placement.box_id,
         })
@@ -676,16 +680,21 @@ class Pipeline:
                                 "ON" if show_fg else "OFF")
 
             frame_count += 1
+
+            # Load cells are cheap to poll (the reader caches in a bg thread), so
+            # refresh counts frequently for a responsive, smooth counter — not the
+            # old every-30-frames (~1.7 s) cadence that made it feel laggy.
+            if self._loadcells is not None and frame_count % 3 == 0:
+                self._state.update_loadcells(
+                    self._loadcells.get_layout(),
+                    self._loadcells.get_weights(),
+                )
+                self._apply_loadcell_counts()
+
             if frame_count % 30 == 0:
                 elapsed = time.time() - t0
                 fps = frame_count / max(elapsed, 1e-6)
                 self._state.update_fps(fps)
-                if self._loadcells is not None:
-                    self._state.update_loadcells(
-                        self._loadcells.get_layout(),
-                        self._loadcells.get_weights(),
-                    )
-                    self._apply_loadcell_counts()
 
             if frame_count % 300 == 0:
                 fps = frame_count / (time.time() - t0)

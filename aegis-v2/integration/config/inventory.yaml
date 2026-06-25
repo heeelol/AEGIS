@@ -16,7 +16,7 @@ items:
   # each bin's OWN load cell, so near-equal weights (3.6 vs 3.1) still attribute
   # correctly; the box weight confirms placement and total.
   part_p04:  { unit_g: 3.6 }   # bin_0_4 (1 kg receptor)
-  part_p05:  { unit_g: 3.1 }   # bin_0_5 (5 kg receptor)
+  part_p05:  { unit_g: 16.6 }   # bin_0_5 (5 kg receptor)
   part_p12:  { unit_g: 67.1 }  # bin_1_2 (10 kg receptor)
 
 bins:

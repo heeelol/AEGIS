@@ -201,12 +201,18 @@ function renderKit(kit) {
   const bg = +(kit.box_grams || 0), eg = +(kit.expected_grams || 0);
   const pct = eg > 0 ? Math.min(100, Math.round((100 * bg) / eg)) : 0;
 
+  // Box weight is a cross-check only (a single 5 kg cell can't resolve small
+  // items); the per-bin counts above are authoritative.
+  const verified = kit.box_verified
+    ? '<span class="kit-ok">✓ verified</span>'
+    : '<span class="kit-check">box cross-check</span>';
+
   el.innerHTML =
     '<div class="kit-state">' + prettyState(kit.state) + '</div>' +
     '<div class="kit-lines">' + rows + '</div>' +
     '<div class="kit-weight">' +
       '<div class="kit-bar"><span style="width:' + pct + '%"></span></div>' +
-      '<div class="kit-grams">' + bg.toFixed(1) + ' / ' + eg.toFixed(1) + ' g</div>' +
+      '<div class="kit-grams">' + bg.toFixed(1) + ' / ' + eg.toFixed(1) + ' g ' + verified + '</div>' +
     '</div>';
 }
 
