@@ -11,7 +11,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-STATIC = Path(__file__).parent / "integration" / "src" / "ui" / "static"
+# this file lives in aegis-v2/tools/, so the UI static dir is one level up
+STATIC = Path(__file__).parent.parent / "integration" / "src" / "ui" / "static"
 app = FastAPI()
 
 # Real rig: 6 top (1 slot each) + 3 bottom (2 slots each), 6-slot track per row.
