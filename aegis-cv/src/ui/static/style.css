@@ -1,0 +1,136 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #111;
+  color: white;
+}
+
+header {
+  padding: 20px;
+  background: #1f1f1f;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+h1 {
+  margin: 0;
+}
+
+#last-updated {
+  color: #ccc;
+}
+
+#bins {
+  padding: 24px;
+  display: grid;
+  grid-template-columns: repeat(8, 80px);
+  gap: 20px;
+  justify-content: center;
+  color: black;
+}
+
+.bin {
+  width: 160px;
+  height: 130px;
+  grid-column: span 2;
+
+  border: 3px solid #222;
+  border-radius: 14px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  color: #111;
+}
+
+.bin:nth-child(5) {
+  grid-column: 2 / span 2;
+}
+
+.bin:nth-child(6) {
+  grid-column: 4 / span 2;
+}
+
+.bin:nth-child(7) {
+  grid-column: 6 / span 2;
+}
+
+.bin-id {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.quantity {
+  font-size: 42px;
+  font-weight: bold;
+  margin-top: 8px;
+}
+
+.white {
+  background: white;
+}
+
+.green {
+  background: #58d66d;
+}
+
+.orange {
+  background: #ffad33;
+}
+
+.warn {
+  background: #ff4d4d;
+}
+
+.wrong_bin {
+  background: #ff4d4d;
+}
+
+.grey {
+  background: #999;
+}
+
+#err-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+
+  background: #ff4d4d;
+  color: white;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  z-index: 9999;
+}
+
+#err-content {
+  max-width: 900px;
+  padding: 40px;
+
+  border: 6px solid white;
+  border-radius: 20px;
+
+  font-size: 36px;
+  font-weight: bold;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.hidden {
+  display: none;
+}

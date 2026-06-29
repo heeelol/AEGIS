@@ -1,0 +1,57 @@
+# AEGIS Bin Geofence Configuration
+# Defines the (x, y) coordinates for the 4x2 bin array
+# Coordinates should match camera FOV calibration
+
+bins:
+  # Row 1 (Top row)
+  bin_0_0:
+    x_min: 10
+    x_max: 120
+    y_min: 10
+    y_max: 120
+  
+  bin_0_1:
+    x_min: 130
+    x_max: 240
+    y_min: 10
+    y_max: 120
+
+  bin_0_2:
+    x_min: 250
+    x_max: 360
+    y_min: 10
+    y_max: 120
+
+  bin_0_3:
+    x_min: 370
+    x_max: 480
+    y_min: 10
+    y_max: 120
+
+  # Row 2 (Bottom row)
+  bin_1_0:
+    x_min: 10
+    x_max: 120
+    y_min: 130
+    y_max: 240
+  
+  bin_1_1:
+    x_min: 130
+    x_max: 240
+    y_min: 130
+    y_max: 240
+
+  bin_1_2:
+    x_min: 250
+    x_max: 360
+    y_min: 130
+    y_max: 240
+
+  bin_1_3:
+    x_min: 370
+    x_max: 480
+    y_min: 130
+    y_max: 240
+
+# Geofence trigger threshold (pixels from boundary)
+geofence_margin: 5
