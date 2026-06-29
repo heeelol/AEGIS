@@ -36,7 +36,7 @@ _MP_LANDMARK_NAMES = [
 ]
 
 # Default model-asset location, resolved relative to the repo root
-# (src/trackers/mediapipe_tracker.py -> parents[2] == aegis-core).
+# (src/trackers/mediapipe_tracker.py -> parents[2] == aegis-cv).
 _DEFAULT_MODEL = Path(__file__).resolve().parents[2] / "models" / "pretrained" / "hand_landmarker.task"
 _MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"

@@ -3,7 +3,9 @@ import shutil
 from pathlib import Path
 import random
 
-dataset_dir = Path(r'c:\Users\yapor\OneDrive\Desktop\CDE3301\TEnterns\aegis-core\models\data\CDE3301.yolov8-obb')
+# Resolve relative to this file (aegis-cv/scripts/utils/) so the script works
+# regardless of the project's location or top-level directory name.
+dataset_dir = Path(__file__).resolve().parents[2] / 'models' / 'data' / 'CDE3301.yolov8-obb'
 train_img_dir = dataset_dir / 'train' / 'images'
 train_lbl_dir = dataset_dir / 'train' / 'labels'
 

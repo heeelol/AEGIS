@@ -14,7 +14,7 @@ format (COCO or YOLOv8).
 **Just call the interpreter by full path (no activation needed):**
 
 ```powershell
-cd C:\Users\yapor\OneDrive\Desktop\CDE3301\TEnterns\aegis-core
+cd C:\Users\yapor\OneDrive\Desktop\CDE3301\TEnterns\aegis-cv
 $py = "C:\Users\yapor\anaconda3\envs\python_clinic\python.exe"
 & $py <script> --dataset B1          # use  & $py  in place of  python
 ```

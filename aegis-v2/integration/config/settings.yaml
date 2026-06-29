@@ -14,7 +14,7 @@ camera:
 # --- Bin Boundary Detector (from cv-models) ------
 bin_detector:
   # task selects the detector: "obb" (oriented boxes, project_9 model) or "detect"
-  # (axis-aligned YOLOv8, e.g. the aegis-core FSV3 model). Relative paths resolve
+  # (axis-aligned YOLOv8, e.g. the aegis-cv FSV3 model). Relative paths resolve
   # against the aegis-v2 root, so the pipeline can launch from any working directory.
   task: "detect"
   model_path: "./cv-models/models/weights/fsv3_detect.pt"

@@ -1,6 +1,6 @@
 """Native OBB bin detector for the aegis-v2 pipeline.
 
-Adapted from aegis-core's ``scripts/inference/initialize_bins_obb.py`` — the
+Adapted from aegis-cv's ``scripts/inference/initialize_bins_obb.py`` — the
 detection core (RAW rotated boxes, no overlap trimming; nearest-center rule at
 attribution time) is kept verbatim. Two things change so the module is
 self-contained inside aegis-v2 and usable as a library by the pipeline:

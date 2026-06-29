@@ -1,7 +1,7 @@
 """Axis-aligned DETECT bin detector for the aegis-v2 pipeline.
 
 Drop-in alternative to ``initialize_bins_obb`` for a standard YOLOv8 **detect**
-model (e.g. the aegis-core FSV-series ``best.pt``). It returns the SAME shape the
+model (e.g. the aegis-cv FSV-series ``best.pt``). It returns the SAME shape the
 OBB detector does — ``[{id, corners, center, area, conf}]`` — so GridSession
 calibration and bin assignment consume it unchanged. An axis-aligned box is just
 a rectangle, so its 4 corners drop straight into the rotated-box machinery.

@@ -1,5 +1,5 @@
 # Rename datasets to consistent naming convention
-$base_path = "C:\Users\yapor\OneDrive\Desktop\CDE3301\TEnterns\aegis-core\models\data"
+$base_path = "C:\Users\yapor\OneDrive\Desktop\CDE3301\TEnterns\aegis-cv\models\data"
 
 # Define rename mappings
 $renames = @{
