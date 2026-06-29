@@ -26,6 +26,10 @@ class BinStatus:
     y_min: float = 0
     y_max: float = 0
     confidence: float = 0.0
+    span: int = 1                    # slots this bin occupies in its row
+    slot_start: int = 0              # first slot index in the row's track
+    row_slots: int = 0               # total slots in this bin's row (0 = unknown)
+    detected: bool = True            # False → declared slot the model didn't find
     is_active: bool = False          # Hand currently in this bin
     hand_id: Optional[int] = None
     handedness: str = ""
@@ -88,6 +92,10 @@ class PipelineState:
                 b.y_min = coords.get("y_min", 0)
                 b.y_max = coords.get("y_max", 0)
                 b.confidence = coords.get("confidence", 0.0)
+                b.span = coords.get("span", 1)
+                b.slot_start = coords.get("slot_start", 0)
+                b.row_slots = coords.get("row_slots", 0)
+                b.detected = coords.get("detected", True)
                 b.is_active = bid in active
 
     def update_hands(self, hands: list, events: list) -> None:
@@ -253,31 +261,62 @@ class PipelineState:
         slots still appear as placeholders.
         """
         with self._lock:
-            # CV-derived: group detected bins by layer (row).
-            cv_counts: dict[int, int] = {}
-            for bid in self._bins:
-                layer, col = self._parse_bin_id(bid)
-                # bins are 0-indexed by col, so count = highest col + 1
-                cv_counts[layer] = max(cv_counts.get(layer, 0), col + 1)
+            # Group bins by layer (row), carrying their slot placement.
+            rows: dict[int, list] = {}
+            for b in self._bins.values():
+                layer, col = self._parse_bin_id(b.bin_id)
+                rows.setdefault(layer, []).append((col, b))
 
             lc_counts = dict(self._loadcell_layout.bins_per_layer)
             lc_connected = self._loadcell_layout.num_layers > 0
+            all_layers = set(rows) | set(lc_counts)
 
-            all_layers = set(cv_counts) | set(lc_counts)
             layers = []
             for layer in sorted(all_layers):
-                n = max(cv_counts.get(layer, 0), lc_counts.get(layer, 0))
+                bins_in_row = sorted(
+                    rows.get(layer, []), key=lambda t: (t[1].slot_start, t[0])
+                )
+                if bins_in_row:
+                    # Explicit slot layout (from LayoutMapper) when row_slots is
+                    # known; otherwise fall back to one uniform slot per bin so
+                    # the legacy layout still renders correctly.
+                    explicit = max((b.row_slots for _, b in bins_in_row), default=0)
+                    if explicit > 0:
+                        row_slots = explicit
+                        bin_list = [
+                            {"id": b.bin_id, "slot_start": b.slot_start,
+                             "span": b.span, "detected": b.detected}
+                            for _, b in bins_in_row
+                        ]
+                    else:
+                        row_slots = len(bins_in_row)
+                        bin_list = [
+                            {"id": b.bin_id, "slot_start": i,
+                             "span": 1, "detected": b.detected}
+                            for i, (_, b) in enumerate(bins_in_row)
+                        ]
+                else:
+                    # Layer known only from load cells — placeholders.
+                    n = lc_counts.get(layer, 0)
+                    row_slots = n
+                    bin_list = [
+                        {"id": f"bin_{layer}_{c}", "slot_start": c,
+                         "span": 1, "detected": False}
+                        for c in range(n)
+                    ]
+
                 layers.append({
                     "layer": layer,
-                    "num_bins": n,
-                    "bin_ids": [f"bin_{layer}_{c}" for c in range(n)],
+                    "row_slots": row_slots,
+                    "num_bins": len(bin_list),
+                    "bins": bin_list,
                 })
 
             return {
                 "num_layers": len(all_layers),
                 "num_bins": sum(l["num_bins"] for l in layers),
                 "layers": layers,
-                "source": {"cv": bool(cv_counts), "loadcells": lc_connected},
+                "source": {"cv": bool(rows), "loadcells": lc_connected},
             }
 
     def set_work_order(self, bin_targets: dict[str, int]) -> None:
@@ -302,6 +341,9 @@ class PipelineState:
     @staticmethod
     def _calculate_bin_status(b: BinStatus) -> str:
         """Determine display status for a bin."""
+        if not b.detected:
+            return "grey"
+
         if not b.using:
             if b.is_active:
                 return "wrong_bin"
