@@ -34,58 +34,55 @@ const int J5 = 21;
 const int J6 = 22;
 const int J7 = 23;
 const int J8 = 25;
-const int J9 = 26; //NOT IN USE
+const int J9 = 26; //NOT IN USE, TODO: SOLDER IT
 const int J10 = 27; //NOT IN USE
 const int J11 = 32;
 const int J12 = 33;
 
-// ---------- BIN TABLE ----------
-const int NUM_BINS = 9;          // number of bins (each = one HX711)
-
 // ------- LOADCELL CONST -------
-const int CELL1 = 0;
-const int CELL2 = 0;
-const int CELL3 = 0;
-const int CELL4 = 0;
-const int CELL5 = 0;
-const int CELL6 = 0;
-const int CELL7 = 0;
-const int CELL8 = 0;
-const int CELL9 = 0;
-const int CELL10 = 0;
+const float CELL1 = 74.1207;
+const float CELL2 = 68.1992;
+const float CELL3 = 71.6398;
+const float CELL4 = 143.7663;
+const float CELL5 = 141.6425;
+const float CELL6 = 1;
+const float CELL7 = 1101.5082; //TODO FIX MECH SIDE THEN RECALIB
+const float CELL8 = 1008.9592; //TODO FIX MECH SIDE THEN RECALIB
+const float CELL9 = 1; // NOT IN USE, PENDING PORT 9
+const float CELL10 = 140.5147;
 
 struct Bin {
   const char* id;                // JSON key, must match loadcell.py (bin_row_col)
   int   dout;                    // DOUT GPIO for this bin's HX711
   float scale;                   // counts per gram for the combined bin
-  long  offset;                  // tare offset (refreshed at boot)
 };
 
-// TODO: fill in dout pins, and the scale/offset values from calibrate().
-// Until calibrated, scale=1 / offset=0 just gives raw-ish numbers.
+// TODO: fill in dout pins, and the scale values from calibrate().
+// Until calibrated, scale=1 just gives raw-ish numbers.
 //
+const int NUM_BINS = 1;          // number of bins (each = one HX711)
 Bin bins[NUM_BINS] = {
-  // id          dout    scale        offset
-  { "bin_0_0", J1, CELL, 0 }, //71.5
-  { "bin_0_1",  J3, CELL,  0 },
-  { "bin_0_2",  J4, CELL, 0 },
-  { "bin_0_3",  J5, CELL,  0 },
-  { "bin_0_4", J6, CELL, 0 },
-  { "bin_0_5", J7, CELL, 0 },
-  { "bin_1_0", J8, CELL, 0 },
+  // id          dout    scale 
+  { "bin_1",  J4, CELL1 },
+  { "bin_2",  J3, CELL2 },
+  { "bin_3", J1, CELL3 },
+  { "bin_4", J6, CELL4 },
+  { "bin_5", J8, CELL5 },
+  // { "bin_7",  J5, CELL7 },
+  // { "bin_8", J7, CELL8 },
+  { "bin_10", J12, CELL10 },
   // { "bin_1_1", J10, CELL, 0 }, //TODO solder the jst for this
-  { "bin_1_2", J11, CELL, 0 },
-  { "bin_2_1", J12, CELL, 0 },
+  // { "bin_6", J11, CELL6 },
 };
 
 HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
 const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 506.8;  // known reference mass, grams
+const float CAL_MASS_G     = 612.0;  // known reference mass, grams
 
 // ---------- FILTER ----------
-const int N_SAMPLES = 10;    // readings averaged per bin per cycle
+const int N_SAMPLES = 5;    // readings averaged per bin per cycle
                             // (low keeps the JSON cadence up; HX711 is ~10 SPS)
 
 void setup() {
@@ -104,10 +101,7 @@ void setup() {
     for (int b = 0; b < NUM_BINS; b++) {
       cell[b].set_scale(bins[b].scale);
     }
-    // Re-tare at boot instead of trusting frozen offsets. Load-cell zero
-    // drifts with temperature, mounting stress, creep and supply voltage,
-    // so a hardcoded offset reads non-zero at no load. Keep platforms EMPTY
-    // at power-up (or FULL, if you want weight to read negative as items leave).
+
     Serial.println(F("Remove ALL load. Taring in 5s..."));
     delay(5000);
     for (int b = 0; b < NUM_BINS; b++) {
@@ -121,7 +115,6 @@ void setup() {
       //   continue;
       // }
       cell[b].tare(20);                       // 20-reading average as zero
-      bins[b].offset = cell[b].get_offset();
       Serial.println(F("  tared OK"));
     }
     Serial.println(F("Boot tare done. Using stored scale."));
@@ -135,13 +128,12 @@ void loop() {
   Serial.print(F("{\"bins\":{"));
   for (int b = 0; b < NUM_BINS; b++) {
     // One combined reading per bin (cells already summed in hardware).
-    float total = cell[b].get_units(N_SAMPLES);   // (raw - offset)/scale = grams
+    float total = cell[b].get_units(N_SAMPLES);   // (raw)/scale = grams
     if (b > 0) Serial.print(',');
     Serial.print('"'); Serial.print(bins[b].id); Serial.print(F("\":"));
     Serial.print(total, 2);
   }
   Serial.println(F("}}"));
-
   delay(200);   // ~5 Hz output
 }
 
@@ -171,7 +163,6 @@ void calibrate() {
   for (int b = 0; b < NUM_BINS; b++) {
     cell[b].set_scale();      // scale = 1 for raw
     cell[b].tare(20);
-    bins[b].offset = cell[b].get_offset();
   }
   Serial.println(F("Tare done."));
 
@@ -182,12 +173,10 @@ void calibrate() {
     Serial.println(F(" (centred). Measuring in 8s..."));
     delay(8000);
 
-    long raw = cell[b].read_average(20);
-    float countsAboveZero = (float)(raw - bins[b].offset);
+    long raw = cell[b].get_value(20);   // offset-subtracted: true counts above the tared zero
+    float countsAboveZero = (float)(raw);
     bins[b].scale = countsAboveZero / CAL_MASS_G;   // counts/gram for the bin
     cell[b].set_scale(bins[b].scale);
-    cell[b].set_offset(bins[b].offset);
-
     Serial.print(F("  scale = ")); Serial.println(bins[b].scale, 4);
   }
 
@@ -195,9 +184,7 @@ void calibrate() {
   Serial.println(F("\n--- PASTE THESE INTO bins[] ---"));
   for (int b = 0; b < NUM_BINS; b++) {
     Serial.print(F("  { \"")); Serial.print(bins[b].id);
-    Serial.print(F("\", ")); Serial.print(bins[b].dout);
     Serial.print(F(", ")); Serial.print(bins[b].scale, 4);
-    Serial.print(F(", ")); Serial.print(bins[b].offset);
     Serial.println(F(" },"));
   }
   Serial.println(F("Set DO_CALIBRATION = false, then re-upload.\n"));
