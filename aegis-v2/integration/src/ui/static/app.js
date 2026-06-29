@@ -123,14 +123,21 @@ function makeBinTile(binId, b, detected, kit) {
   // Hand-in-bin glow (in the bin's own colour) — clearer for the demo.
   box.className = "bin " + ui + (b.is_active ? " hand-in" : "");
 
+  // Wrong-bin cross: the hand is in a bin the operator must NOT pick from right now —
+  // not part of the job (not_in_bom), soft-locked while another bin is active, or already
+  // done. The red ✗ overlay makes "don't collect here" unmistakable (CSS: .cross / .bin.wrong).
+  const wrongToPick = ui === "not_in_bom" || ui === "locked" || ui === "done";
+  const cross = (b.is_active && wrongToPick) ? '<div class="cross"></div>' : "";
+  if (cross) box.classList.add("wrong");
+
   const label = b.label || b.id;
   let inner = '<div class="bin-id">' + label + '</div>';
 
-  if (ui === "not_in_bom") { box.innerHTML = inner; return box; }
+  if (ui === "not_in_bom") { box.innerHTML = inner + cross; return box; }
 
   if (ui === "locked") {
     inner += '<div class="quantity muted">' + b.current + '/' + b.total + '</div>';
-    box.innerHTML = inner;
+    box.innerHTML = inner + cross;
     return box;
   }
 
@@ -155,10 +162,10 @@ function makeBinTile(binId, b, detected, kit) {
   // Manual override only on the active bin (the only one being picked).
   if (ui === "active") {
     inner += makeOverrideControls(b.id);
-    box.innerHTML = inner;
+    box.innerHTML = inner + cross;
     wireOverrideControls(box, b.id);
   } else {
-    box.innerHTML = inner;
+    box.innerHTML = inner + cross;   // `done` is wrong-to-pick → shows the cross; `available` doesn't
   }
   return box;
 }
