@@ -22,12 +22,37 @@
 
 #include "HX711.h"
 
-// ---------- SHARED CLOCK ----------
+// ---------- PIN TABLE ----------
 // One SCK pin drives ALL HX711s. Each bin still needs its own DOUT (below).
 const int SCK_PIN = 5;          // TODO: set your shared SCK GPIO
 
+const int J1 = 4;
+const int J2 = 13; //NOT IN USE
+const int J3 = 18;
+const int J4 = 19;
+const int J5 = 21;
+const int J6 = 22;
+const int J7 = 23;
+const int J8 = 25;
+const int J9 = 26; //NOT IN USE
+const int J10 = 27; //NOT IN USE
+const int J11 = 32;
+const int J12 = 33;
+
 // ---------- BIN TABLE ----------
-const int NUM_BINS = 3;          // number of bins (each = one HX711)
+const int NUM_BINS = 9;          // number of bins (each = one HX711)
+
+// ------- LOADCELL CONST -------
+const int CELL1 = 0;
+const int CELL2 = 0;
+const int CELL3 = 0;
+const int CELL4 = 0;
+const int CELL5 = 0;
+const int CELL6 = 0;
+const int CELL7 = 0;
+const int CELL8 = 0;
+const int CELL9 = 0;
+const int CELL10 = 0;
 
 struct Bin {
   const char* id;                // JSON key, must match loadcell.py (bin_row_col)
@@ -41,25 +66,31 @@ struct Bin {
 //
 Bin bins[NUM_BINS] = {
   // id          dout    scale        offset
-  { "bin_0_0",  13, 142.187,  0 },
-  { "bin_0_1",  14, 1056.4103,  0 },
-  { "bin_1_0",  15, 72.7177,  0},
+  { "bin_0_0", J1, CELL, 0 }, //71.5
+  { "bin_0_1",  J3, CELL,  0 },
+  { "bin_0_2",  J4, CELL, 0 },
+  { "bin_0_3",  J5, CELL,  0 },
+  { "bin_0_4", J6, CELL, 0 },
+  { "bin_0_5", J7, CELL, 0 },
+  { "bin_1_0", J8, CELL, 0 },
+  // { "bin_1_1", J10, CELL, 0 }, //TODO solder the jst for this
+  { "bin_1_2", J11, CELL, 0 },
+  { "bin_2_1", J12, CELL, 0 },
 };
 
 HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
 const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 113.1;  // known reference mass, grams
+const float CAL_MASS_G     = 506.8;  // known reference mass, grams
 
 // ---------- FILTER ----------
-const int N_SAMPLES = 3;    // readings averaged per bin per cycle
+const int N_SAMPLES = 10;    // readings averaged per bin per cycle
                             // (low keeps the JSON cadence up; HX711 is ~10 SPS)
 
 void setup() {
   Serial.begin(115200);
   while (!Serial) {}
-
   for (int b = 0; b < NUM_BINS; b++) {
     cell[b].begin(bins[b].dout, SCK_PIN);   // shared SCK
   }
@@ -80,8 +111,18 @@ void setup() {
     Serial.println(F("Remove ALL load. Taring in 5s..."));
     delay(5000);
     for (int b = 0; b < NUM_BINS; b++) {
+      Serial.print(F("Taring ")); Serial.print(bins[b].id);
+      // Serial.print(F(" (DOUT GPIO=")); Serial.print(bins[b].dout);
+      // Serial.print(F(", SCK GPIO=")); Serial.print(SCK_PIN); Serial.println(F(")..."));
+      // // Don't block forever if the HX711 never signals "ready" (DOUT stuck
+      // // high = bad power/GND/wiring or wrong pin). Bail with a message.
+      // if (!cell[b].wait_ready_timeout(1000)) {
+      //   Serial.println(F("  HX711 NOT RESPONDING -> check power, GND, DT/SCK wiring & pin numbers"));
+      //   continue;
+      // }
       cell[b].tare(20);                       // 20-reading average as zero
       bins[b].offset = cell[b].get_offset();
+      Serial.println(F("  tared OK"));
     }
     Serial.println(F("Boot tare done. Using stored scale."));
   }
