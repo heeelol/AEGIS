@@ -197,6 +197,15 @@ h2 {
 .bin.done .bin-weight { color: var(--green); }
 .bin-lock { font-size: 22px; opacity: 0.7; margin: 4px 0; }
 .quantity.muted { opacity: 0.5; }
+
+/* Hand-in-bin: glow in the bin's own current colour so it's obvious which bin
+   the operator's hand is in. A locked bin lifts its dim a little but stays muted. */
+.bin.hand-in            { box-shadow: 0 0 0 3px rgba(255,255,255,0.85), 0 0 16px rgba(255,255,255,0.35); }
+.bin.available.hand-in  { box-shadow: 0 0 0 3px #D5DCDA, 0 0 16px rgba(213,220,218,0.6); }
+.bin.active.hand-in     { box-shadow: 0 0 0 3px var(--hand), 0 0 18px var(--hand); }
+.bin.done.hand-in       { box-shadow: 0 0 0 3px var(--green), 0 0 16px rgba(43,212,110,0.55); }
+.bin.locked.hand-in     { opacity: 0.7; box-shadow: 0 0 0 3px var(--rule); }
+
 @keyframes bin-pulse {
   0%, 100% { box-shadow: 0 0 0 2px var(--hand); }
   50%      { box-shadow: 0 0 0 6px rgba(70, 224, 192, 0.35); }

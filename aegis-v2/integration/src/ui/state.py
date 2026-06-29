@@ -78,6 +78,12 @@ class PipelineState:
         self._kit: dict = {}
         self._complete_requested: bool = False
 
+        # Sequential pick lock: the one bin currently in progress. The first pick on
+        # a bin locks it (only it counts); hitting its target completes it (added to
+        # `_done`) and releases the lock so any other bin can be started next.
+        self._active_bin: Optional[str] = None
+        self._done: set[str] = set()
+
     # ── Writers (called by the pipeline loop) ────────────────
 
     def update_bins(self, geofences: dict, active_bin_ids: set[str] | None = None) -> None:
@@ -129,10 +135,21 @@ class PipelineState:
                     b.handedness = ""
 
     def record_pick(self, bin_id: str) -> None:
-        """Increment pick count for a bin."""
+        """Increment pick count, enforcing the sequential one-bin-at-a-time lock."""
         with self._lock:
-            if bin_id in self._bins:
-                self._bins[bin_id].pick_count += 1
+            b = self._bins.get(bin_id)
+            if b is None:
+                return
+            # First pick locks this bin; while locked, only this bin counts.
+            if self._active_bin is None:
+                self._active_bin = bin_id
+            elif self._active_bin != bin_id:
+                return  # another bin is in progress → ignore out-of-order pick
+            b.pick_count += 1
+            # Target met → complete the bin and release the lock for the next one.
+            if b.target_count > 0 and b.pick_count >= b.target_count:
+                self._done.add(bin_id)
+                self._active_bin = None
 
     def adjust_pick_count(self, bin_id: str, delta: int) -> Optional[int]:
         """Nudge a bin's pick count by `delta`. Clamped to ≥0. Returns new value."""
@@ -229,9 +246,16 @@ class PipelineState:
             return result
 
     def get_kit(self) -> dict:
-        """Latest kitting-box state for the dashboard (empty until load cells run)."""
+        """Latest kitting-box state for the dashboard, incl. the sequential lock.
+
+        ``active`` = the bin currently in progress (the UI locks/dims the others);
+        ``done`` = completed bins (shown green/frozen). Read by ``binUiState`` in app.js.
+        """
         with self._lock:
-            return dict(self._kit)
+            kit = dict(self._kit)
+            kit["active"] = self._active_bin
+            kit["done"] = sorted(self._done)
+            return kit
 
     def get_hands(self) -> list[dict]:
         with self._lock:

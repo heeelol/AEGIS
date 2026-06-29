@@ -120,7 +120,8 @@ function makeBinTile(binId, b, detected, kit) {
   }
 
   const ui = binUiState(b, detected, kit);   // available | active | locked | done | not_in_bom
-  box.className = "bin " + ui;
+  // Hand-in-bin glow (in the bin's own colour) — clearer for the demo.
+  box.className = "bin " + ui + (b.is_active ? " hand-in" : "");
 
   const label = b.label || b.id;
   let inner = '<div class="bin-id">' + label + '</div>';
@@ -128,7 +129,6 @@ function makeBinTile(binId, b, detected, kit) {
   if (ui === "not_in_bom") { box.innerHTML = inner; return box; }
 
   if (ui === "locked") {
-    inner += '<div class="bin-lock">🔒</div>';
     inner += '<div class="quantity muted">' + b.current + '/' + b.total + '</div>';
     box.innerHTML = inner;
     return box;
