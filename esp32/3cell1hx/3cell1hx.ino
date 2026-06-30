@@ -78,8 +78,8 @@ Bin bins[NUM_BINS] = {
 HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
-const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 612.0;  // known reference mass, grams
+const bool  DO_CALIBRATION = true;  // true to (re)calibrate; false to run
+const float CAL_MASS_G     = 203.9;  // known reference mass, grams
 
 // ---------- FILTER ----------
 const int N_SAMPLES = 1;    // readings averaged per bin per cycle

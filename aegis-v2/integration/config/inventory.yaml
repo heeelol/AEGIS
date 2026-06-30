@@ -9,11 +9,14 @@
 
 items:
   # item_name: { unit_g: <grams per single item> }
-  bolt_m6:   { unit_g: 6.2 }
-  washer_m6: { unit_g: 1.1 }
-  d-3200: { unit_g: 3.6 }
-  screw_m6: { unit_g: 3.1 }
-  ext_brack: { unit_g: 63.7 }
+  pcb_pipe: { unit_g: 130.5 }
+  copper_rod: { unit_g: 23.9 }
+  te_completed_part: { unit_g: 12.5 }
+  te_uncompleted_part: { unit_g: 3.6 }
+  m6_cross_screw: { unit_g: 3.2 }
+  shelf_bracket: { unit_g: 5.1 }
+  bin_sup_big: { unit_g: 15.1 }
+  bin_sup_med: { unit_g: 9.8 }
 
 
 bins:
