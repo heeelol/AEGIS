@@ -7,23 +7,23 @@
 #
 # Edit unit weights and bin assignments here; nothing about counts is needed.
 
+# Component catalogue (names + unit weights) — integrated from v2_test 2026-06-30.
 items:
   # item_name: { unit_g: <grams per single item> }
-  bolt_m6:   { unit_g: 13.9 }
-  washer_m6: { unit_g: 1.1 }
-  amp:       { unit_g: 3.8 }   # one AMP = 3.8 g (confirmed live 2026-06-17)
-  # Kitting demo items (one per BOM source bin). Per-bin removal is measured by
-  # each bin's OWN load cell, so near-equal weights (3.6 vs 3.1) still attribute
-  # correctly; the box weight confirms placement and total.
-  part_p04:  { unit_g: 3.6 }   # bin_0_4 (1 kg receptor)
-  part_p05:  { unit_g: 16.6 }   # bin_0_5 (5 kg receptor)
-  part_p12:  { unit_g: 67.1 }  # bin_1_2 (10 kg receptor)
+  pcb_pipe:            { unit_g: 130.5 }
+  copper_rod:          { unit_g: 23.9 }
+  te_completed_part:   { unit_g: 12.5 }
+  te_uncompleted_part: { unit_g: 3.6 }
+  m6_cross_screw:      { unit_g: 3.2 }
+  shelf_bracket:       { unit_g: 5.1 }
+  bin_sup_big:         { unit_g: 15.1 }
+  bin_sup_med:         { unit_g: 9.8 }
 
-bins:
-  # bin_id: item_name   (bin_id matches the load-cell keys, AFTER bin_remap)
-  # --- Kitting demo: 3 BOM source bins (each on its own load receptor) ---
-  bin_0_4: part_p04
-  bin_0_5: part_p05
-  bin_1_2: part_p12
-  # The kitting box (kit_box) is a SEPARATE 4th receptor (off-camera); it is NOT
-  # an item bin — configured under sensing.loadcells.kit_box in settings.yaml.
+# Bin -> component links. bin_id = canonical grid id (AFTER bin_remap in settings.yaml).
+# TODO (manual — you said you'll link these yourself): add one line per BOM bin, e.g.
+#   bin_0_4: te_uncompleted_part
+#   bin_0_5: m6_cross_screw
+#   bin_1_2: pcb_pipe
+# Available items: pcb_pipe, copper_rod, te_completed_part, te_uncompleted_part,
+#                  m6_cross_screw, shelf_bracket, bin_sup_big, bin_sup_med
+bins: {}
