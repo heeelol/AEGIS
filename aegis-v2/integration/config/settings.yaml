@@ -128,13 +128,21 @@ sensing:
     port: "COM3"           # Silicon Labs CP210x (ESP32) — enumerated as COM3 (2026-06-24)
     baudrate: 115200
     stale_after: 5.0       # seconds without data → treated as disconnected
-    # 4 receptors. Firmware emits bin_0_0/bin_0_1/bin_1_0/bin_1_1; remap to the
-    # canonical grid ids + box (identified live 2026-06-24):
+    # Recalibrated firmware (esp32/3cell1hx/3cell1hx.ino) emits bin_1..bin_10;
+    # remap to the canonical grid ids + kit box (operator mapping, 2026-06-30).
     bin_remap:
-      bin_0_1: bin_0_4    # 1 kg receptor  → 3.6 g items
-      bin_0_0: bin_0_5    # 5 kg receptor  → 16.6 g items
-      bin_1_0: bin_1_2    # 10 kg receptor → 67.1 g items
-      bin_1_1: kit_box    # added 5 kg receptor → kitting box (off-camera)
+      bin_1:  bin_1_0
+      bin_2:  bin_1_1
+      bin_3:  bin_1_2    # BOM bin
+      bin_5:  bin_0_2
+      bin_7:  bin_0_3
+      bin_8:  bin_0_4    # BOM bin
+      bin_10: kit_box    # kitting box
+      bin_4:  bin_0_5    # BOM bin — ASSUMED: you said bin_0_5 → bin_9, but bin_9 was
+                         #   already mapped to bin_0_0 AND is inactive in firmware.
+                         #   bin_4 is the only unmapped ACTIVE cell; confirm or change.
+      bin_6:  bin_0_1    # NOTE: bin_6 is commented-out in firmware → no weight until enabled
+      bin_9:  bin_0_0    # NOTE: bin_9 is commented-out (CELL9=1) → no weight until enabled
     # Kitting box = the 4th load receptor (separate 5 kg cell, off-camera).
     # SEQUENTIAL single-bin FSM: one bin is active at a time, so the box's weight
     # change can only come from that item type (no cross-bin ambiguity). The active
