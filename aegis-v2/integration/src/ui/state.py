@@ -72,6 +72,23 @@ class PipelineState:
         self._loadcell_layout: LayerLayout = LayerLayout()
         self._loadcell_weights: dict[str, float] = {}
 
+        # Kitting-box (3-load-receptor demo): latest snapshot from the placement
+        # tracker, plus a one-shot "complete kit" request raised by the UI and
+        # consumed by the pipeline (which re-tares the receptors for the next kit).
+        self._kit: dict = {}
+        self._complete_requested: bool = False
+
+        # Work-order cycle: latest {set_number, total_sets, complete} snapshot,
+        # plus a one-shot "start new cycle" request raised by the UI.
+        self._cycle: dict = {}
+        self._restart_requested: bool = False
+
+        # Sequential pick lock: the one bin currently in progress. The first pick on
+        # a bin locks it (only it counts); hitting its target completes it (added to
+        # `_done`) and releases the lock so any other bin can be started next.
+        self._active_bin: Optional[str] = None
+        self._done: set[str] = set()
+
     # ── Writers (called by the pipeline loop) ────────────────
 
     def update_bins(self, geofences: dict, active_bin_ids: set[str] | None = None) -> None:
@@ -123,10 +140,21 @@ class PipelineState:
                     b.handedness = ""
 
     def record_pick(self, bin_id: str) -> None:
-        """Increment pick count for a bin."""
+        """Increment pick count, enforcing the sequential one-bin-at-a-time lock."""
         with self._lock:
-            if bin_id in self._bins:
-                self._bins[bin_id].pick_count += 1
+            b = self._bins.get(bin_id)
+            if b is None:
+                return
+            # First pick locks this bin; while locked, only this bin counts.
+            if self._active_bin is None:
+                self._active_bin = bin_id
+            elif self._active_bin != bin_id:
+                return  # another bin is in progress → ignore out-of-order pick
+            b.pick_count += 1
+            # Target met → complete the bin and release the lock for the next one.
+            if b.target_count > 0 and b.pick_count >= b.target_count:
+                self._done.add(bin_id)
+                self._active_bin = None
 
     def adjust_pick_count(self, bin_id: str, delta: int) -> Optional[int]:
         """Nudge a bin's pick count by `delta`. Clamped to ≥0. Returns new value."""
@@ -179,11 +207,46 @@ class PipelineState:
             if weights is not None:
                 self._loadcell_weights = dict(weights)
 
+    def update_kit(self, kit: dict) -> None:
+        """Store the latest kitting-box snapshot (called by the pipeline)."""
+        with self._lock:
+            self._kit = dict(kit)
+
+    def update_cycle(self, cycle: dict) -> None:
+        """Store the latest cycle/set snapshot (called by the pipeline)."""
+        with self._lock:
+            self._cycle = dict(cycle)
+
+    def request_complete(self) -> None:
+        """UI asks to close the current kit (one-shot; consumed by the pipeline)."""
+        with self._lock:
+            self._complete_requested = True
+
+    def consume_complete_request(self) -> bool:
+        """Pipeline checks/clears the close-kit request. True if one was pending."""
+        with self._lock:
+            pending = self._complete_requested
+            self._complete_requested = False
+            return pending
+
+    def request_restart(self) -> None:
+        """UI asks to start a new cycle from set 1 (one-shot; consumed by pipeline)."""
+        with self._lock:
+            self._restart_requested = True
+
+    def consume_restart_request(self) -> bool:
+        """Pipeline checks/clears the new-cycle request. True if one was pending."""
+        with self._lock:
+            pending = self._restart_requested
+            self._restart_requested = False
+            return pending
+
     # ── Readers (called by FastAPI endpoints) ────────────────
 
     def get_bins(self) -> list[dict]:
         with self._lock:
             result = []
+            removed_map = self._kit.get("removed", {}) if self._kit else {}
             for b in self._bins.values():
                 status = self._calculate_bin_status(b)
                 layer, col = self._parse_bin_id(b.bin_id)
@@ -192,7 +255,8 @@ class PipelineState:
                     "label": b.label,
                     "layer": layer,
                     "col": col,
-                    "current": b.pick_count,
+                    "current": b.pick_count,           # placed (verified in box)
+                    "removed": removed_map.get(b.bin_id, b.pick_count),  # taken out of bin
                     "total": b.target_count,
                     "status": status,
                     "using": b.using,
@@ -202,6 +266,25 @@ class PipelineState:
                     "weight": self._loadcell_weights.get(b.bin_id, 0.0),
                 })
             return result
+
+    def get_kit(self) -> dict:
+        """Latest kitting-box state for the dashboard, incl. the sequential lock.
+
+        ``active`` = the bin currently in progress (the UI locks/dims the others);
+        ``done`` = completed bins (shown green/frozen). Read by ``binUiState`` in app.js.
+        """
+        with self._lock:
+            kit = dict(self._kit)
+            if "active" not in kit:
+                kit["active"] = self._active_bin
+            if "done" not in kit:
+                kit["done"] = sorted(self._done)
+            return kit
+
+    def get_cycle(self) -> dict:
+        """Latest cycle/set state for the dashboard: {set_number, total_sets, complete}."""
+        with self._lock:
+            return dict(self._cycle)
 
     def get_hands(self) -> list[dict]:
         with self._lock:

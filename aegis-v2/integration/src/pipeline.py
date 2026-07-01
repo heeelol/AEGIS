@@ -39,7 +39,8 @@ _DEFAULT_CONFIG = str(_ROOT / "integration" / "config" / "settings.yaml")
 
 from integration.src.engine import BinAssignmentEngine, BinRegion, OcclusionHold
 from integration.src.detectors.foreground import ForegroundModel
-from integration.src.sensing import LoadCellReader
+from integration.src.sensing import LoadCellReader, PlacementTracker
+from integration.src.engine.cycle import CycleManager
 from integration.src.ui.overlay import OverlayUI
 from integration.src.ui.state import PipelineState
 
@@ -106,6 +107,8 @@ class Pipeline:
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
         self._inventory = None                    # InventoryTracker (built with load cells)
+        self._placement: Optional[PlacementTracker] = None  # kitting-box placement counting
+        self._cycle: Optional[CycleManager] = None           # work-order cycle of sets
         self._geofences: dict = {}
         self._rotate_180: bool = bool(
             self._config.get("camera", {}).get("rotate_180", False))
@@ -239,19 +242,33 @@ class Pipeline:
                     "workstation grid, '2' to initialise the kit")
 
     def _load_obb_model(self) -> None:
-        """Load the native OBB bin model once at startup (fails soft to ``None``)."""
-        from integration.src.detectors import initialize_bins_obb as obb
-        self._obb = obb
-        model_path = self._config.get("bin_detector", {}).get("model_path")
+        """Load the bin detection model once at startup (fails soft to ``None``).
+
+        ``bin_detector.task`` selects the detector: ``"obb"`` (default, oriented
+        boxes) or ``"detect"`` (axis-aligned YOLOv8 detect, e.g. FSV3). Both
+        return the same ``[{id, corners, center, area, conf}]`` shape, so the rest
+        of the flow is identical.
+        """
+        det_cfg = self._config.get("bin_detector", {})
+        task = str(det_cfg.get("task", "obb")).lower()
+        if task == "detect":
+            from integration.src.detectors import initialize_bins_detect as det
+            self._obb = det
+        else:
+            from integration.src.detectors import initialize_bins_obb as obb
+            self._obb = obb
+        model_path = det_cfg.get("model_path")
         if model_path:
             p = Path(model_path)
             if not p.is_absolute():
                 p = _ROOT / model_path        # _ROOT = aegis-v2/
             model_path = str(p)
-        self._obb_model = obb.load_model(model_path)
+        self._obb_model = self._obb.load_model(model_path)
         if self._obb_model is None:
-            logger.warning("OBB model unavailable — calibration ('1') will find no "
-                           "bins until weights/ultralytics are present")
+            logger.warning("Bin model unavailable (task=%s) — calibration ('1') will "
+                           "find no bins until weights/ultralytics are present", task)
+        else:
+            logger.info("Bin detection task: %s", task)
 
     @staticmethod
     def _build_manual_geofences(
@@ -290,35 +307,23 @@ class Pipeline:
         return geofences
 
     def _apply_work_order(self) -> None:
-        """Load predetermined target pick counts and push them to the dashboard.
+        """Push the CURRENT set's target pick counts to the dashboard.
 
-        ``work_order.targets`` is a list-of-lists mirroring the bin layout: one
-        inner list per layer, one number per bin. Each maps to a ``bin_{row}_{col}``
-        id so the dashboard can show "current / target" (e.g. 2/5). Bins with no
-        entry keep target 0 and display just the live count.
+        The work order is a cycle of sets (``work_order.sets``); each set is a
+        ``{bin_id: quantity}`` pick list (canonical grid ids). Bins absent from
+        the current set get target 0 — marked not-in-use (using=False) by
+        set_work_order, so a hand entering one trips the wrong-bin cross.
+        Advancing or restarting the cycle re-applies this for the new set.
         """
-        wo_cfg = self._config.get("work_order", {}) or {}
-        targets = wo_cfg.get("targets")
-        if not targets:
-            logger.info("No work order configured — bins show live count only")
-            return
-
-        # Build a target for EVERY bin on the layout. A bin's target comes from
-        # the targets grid by its (row, col); bins with target 0 — or absent
-        # from the grid entirely — are marked not-in-use (using=False) by
-        # set_work_order, so a hand entering one trips the wrong-bin warning.
-        bin_targets: dict = {}
-        for bin_id in self._geofences:
-            row, col = PipelineState._parse_bin_id(bin_id)
-            try:
-                bin_targets[bin_id] = int(targets[row][col])
-            except (IndexError, TypeError, ValueError):
-                bin_targets[bin_id] = 0
-
+        self._ensure_cycle()
+        cur = self._cycle.current_targets()
+        bin_targets = {bin_id: int(cur.get(bin_id, 0)) for bin_id in self._geofences}
         self._state.set_work_order(bin_targets)
+        self._state.update_cycle(self._cycle.snapshot())
         in_use = sum(1 for t in bin_targets.values() if t > 0)
-        logger.info("Work order applied: %d/%d bins in use, %d total items",
-                    in_use, len(bin_targets), sum(bin_targets.values()))
+        logger.info("Set %d/%d applied: %d bins in use, %d items",
+                    self._cycle.set_number, self._cycle.total_sets,
+                    in_use, sum(bin_targets.values()))
 
     def _init_loadcells(self) -> None:
         """Initialise the load-cell reader and merge its layout into shared state.
@@ -331,30 +336,143 @@ class Pipeline:
         self._loadcells = LoadCellReader(lc_cfg)
         from integration.src.sensing import InventoryTracker
         self._inventory = InventoryTracker()        # loads config/inventory.yaml
+
+        # Kitting-box placement tracker (3-load-receptor demo). Counts items as
+        # they land in the box; the BOM source bins + their unit weights come
+        # from inventory.yaml, targets from the work order, box id/tolerance from
+        # the loadcells.kit_box config block.
+        units = self._inventory.units()
+        box_cfg = lc_cfg.get("kit_box", {}) or {}
+        bom_targets = {b: self._target_for(b) for b in units}
+        self._placement = PlacementTracker(
+            units, bom_targets,
+            box_cfg.get("box_id", "kit_box"),
+            box_cfg.get("tolerance_g"),
+            ema_alpha=box_cfg.get("ema_alpha", 0.4),
+            hysteresis=box_cfg.get("hysteresis", 0.25),
+            box_tolerance_g=box_cfg.get("box_tolerance_g"),
+            box_step_tolerance_g=box_cfg.get("box_step_tolerance_g"),
+            box_step_fraction=box_cfg.get("box_step_fraction", 0.15),
+            activation_frac=box_cfg.get("activation_frac", 0.5),
+            wrong_bin_frac=box_cfg.get("wrong_bin_frac", 0.5),
+        )
+        boot_weights = self._loadcells.get_weights()
+        self._placement.tare(boot_weights)  # software zero at boot
+        self._empty_box_raw = float(boot_weights.get("kit_box", 0.0))
+
         layout = self._loadcells.get_layout()
         self._state.update_loadcells(layout, self._loadcells.get_weights())
         self._apply_loadcell_counts()
         if self._loadcells.is_connected():
-            logger.info("Load cells connected: %d layer(s)", layout.num_layers)
+            logger.info("Load cells connected: %d layer(s); kitting box=%s, "
+                        "BOM bins=%s, expected box total=%.1f g",
+                        layout.num_layers, self._placement.box_id,
+                        sorted(units), self._placement.expected_grams)
         else:
             logger.info("Load cells not connected (stub) — layout from CV only")
 
-    def _apply_loadcell_counts(self) -> None:
-        """Drive mapped bins' pick counts from the latest load-cell weights.
+    def _target_for(self, bin_id: str) -> int:
+        """Target for ``bin_id`` under the current set of the work-order cycle."""
+        self._ensure_cycle()
+        return int(self._cycle.current_targets().get(bin_id, 0))
 
-        Authoritative for inventory-mapped bins while the cell is connected;
-        the connected-guard in ``derive_pick_counts`` leaves counts alone when
-        the link drops. Bins absent from inventory.yaml are never touched.
+    # ── Cycle / set sequencing ───────────────────────────────
+    def _ensure_cycle(self) -> None:
+        if self._cycle is None:
+            sets = (self._config.get("work_order", {}) or {}).get("sets")
+            self._cycle = CycleManager(sets)
+
+    def _apply_set_to_placement(self) -> None:
+        if self._placement is not None:
+            self._placement.set_targets(self._cycle.current_targets())
+
+    def _advance_set(self, weights: dict) -> None:
+        """Operator confirmed the current set: advance, re-target, and wait to empty."""
+        self._ensure_cycle()
+        just_done = self._cycle.advance()
+        self._apply_work_order()            # push next set's targets + cycle snapshot
+        self._apply_set_to_placement()
+        self._waiting_to_empty = True
+        logger.info("Set confirmed -> set %d/%d%s (waiting for box to be emptied)", self._cycle.set_number,
+                    self._cycle.total_sets, "  (CYCLE COMPLETE)" if just_done else "")
+
+    def _restart_cycle(self, weights: dict) -> None:
+        """Operator started a new cycle from the cycle-complete popup."""
+        self._ensure_cycle()
+        self._cycle.restart()
+        self._apply_work_order()
+        self._apply_set_to_placement()
+        self._waiting_to_empty = False
+        if self._placement is not None:
+            self._placement.tare(weights)
+            self._empty_box_raw = float(weights.get("kit_box", 0.0))
+        logger.info("Cycle restarted -> set 1/%d", self._cycle.total_sets)
+
+    def _service_cycle_requests(self) -> None:
+        """Handle operator set-complete / cycle-restart each loop (with or
+        without load cells)."""
+        if self._state.consume_complete_request():
+            w = self._loadcells.get_weights() if self._loadcells is not None else {}
+            self._advance_set(w)
+        if self._state.consume_restart_request():
+            w = self._loadcells.get_weights() if self._loadcells is not None else {}
+            self._restart_cycle(w)
+
+    def _apply_loadcell_counts(self) -> None:
+        """Drive BOM-bin pick counts from the kitting box (placement-driven).
+
+        A bin's count is how many of its items the box currently holds, not how
+        many left the bin — the counter only moves on placement. Connected-guard:
+        a dropped link leaves counts alone. When the UI requests "complete kit",
+        all receptors are re-tared so the next kit starts from zero.
         """
-        if self._loadcells is None or self._inventory is None:
+        if self._loadcells is None or self._placement is None:
             return
-        counts = derive_pick_counts(
-            self._loadcells.get_weights(),
-            self._inventory,
-            self._loadcells.is_connected(),
-        )
-        for bin_id, count in counts.items():
+        if not self._loadcells.is_connected():
+            return
+        weights = self._loadcells.get_weights()
+
+        # If waiting to empty, block counts and prompt operator until box is physically cleared
+        if getattr(self, "_waiting_to_empty", False):
+            raw_box = float(weights.get("kit_box", 0.0))
+            empty_raw = getattr(self, "_empty_box_raw", 0.0)
+            if abs(raw_box - empty_raw) <= 4.0:
+                self._placement.tare(weights)
+                self._empty_box_raw = float(weights.get("kit_box", 0.0))
+                self._waiting_to_empty = False
+                logger.info("Kitting box empty detected. Next set activated and tared.")
+            else:
+                self._state.update_kit({
+                    "placed": {},
+                    "removed": {},
+                    "targets": {},
+                    "active": None,
+                    "done": [],
+                    "box_grams": round(raw_box - empty_raw, 1),
+                    "complete": False,
+                    "state": "IDLE",
+                    "overpick": {},
+                    "alert": {"type": "empty-kit-box", "message": "PLEASE EMPTY KITTING BOX TO START NEXT SET"},
+                    "box_id": self._placement.box_id,
+                })
+                return
+
+        kit = self._placement.update(weights)
+        for bin_id, count in kit.placed.items():
             self._state.set_pick_count(bin_id, count)
+        self._state.update_kit({
+            "placed": kit.placed,
+            "removed": kit.removed,
+            "targets": kit.targets,
+            "active": kit.active,
+            "done": kit.done,
+            "box_grams": kit.box_grams,
+            "complete": kit.complete,
+            "state": kit.state,
+            "overpick": kit.overpick,
+            "alert": kit.alert,
+            "box_id": self._placement.box_id,
+        })
 
     def _load_hand_tracker(self) -> None:
         ht_cfg = self._config.get("hand_tracker", {})
@@ -459,9 +577,36 @@ class Pipeline:
             self._grid_session.calibrate(dets)
         except ValueError as e:
             logger.warning("Grid calibration failed: %s", e)
+            self._save_calib_debug(frame, dets)
             return
         logger.info("Workstation grid calibrated — 9 slots locked")
         self._apply_bins(self._grid_session.to_geofences())
+
+    def _save_calib_debug(self, frame, dets) -> None:
+        """On a failed calibration, save the frame with detections drawn so the
+        bin count/positions can be inspected (e.g. a double-box vs a missed bin)."""
+        try:
+            import numpy as np
+            dbg = frame.copy()
+            ys = [d["center"][1] for d in dets]
+            mid = (min(ys) + max(ys)) / 2 if ys else 0
+            for d in dets:
+                pts = np.asarray(d["corners"], dtype=np.int32).reshape(-1, 1, 2)
+                row = "T" if d["center"][1] < mid else "B"      # rough top/bottom split
+                color = (0, 255, 0) if row == "T" else (0, 180, 255)
+                cv2.polylines(dbg, [pts], True, color, 2)
+                cx, cy = int(d["center"][0]), int(d["center"][1])
+                cv2.circle(dbg, (cx, cy), 4, (0, 0, 255), -1)
+                cv2.putText(dbg, f"{row} {d.get('conf', 0):.2f}", (cx - 20, cy - 8),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            n_top = sum(1 for d in dets if d["center"][1] < mid)
+            cv2.putText(dbg, f"{len(dets)} bins  top={n_top} bottom={len(dets)-n_top}",
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            out = _ROOT / "calib_debug.jpg"
+            cv2.imwrite(str(out), dbg)
+            logger.warning("Saved calibration debug image: %s (inspect bin boxes)", out)
+        except Exception as e:  # debug aid must never crash the pipeline
+            logger.debug("Could not save calib debug image: %s", e)
 
     def _init_kit(self, frame) -> None:
         """Key '2': snapshot → match to grid → present / missing bins."""
@@ -594,16 +739,25 @@ class Pipeline:
                                 "ON" if show_fg else "OFF")
 
             frame_count += 1
+
+            # Load cells are cheap to poll (the reader caches in a bg thread), so
+            # refresh counts frequently for a responsive, smooth counter — not the
+            # old every-30-frames (~1.7 s) cadence that made it feel laggy.
+            # Operator set-complete / cycle-restart — serviced every loop, with
+            # or without load cells.
+            self._service_cycle_requests()
+
+            if self._loadcells is not None and frame_count % 3 == 0:
+                self._state.update_loadcells(
+                    self._loadcells.get_layout(),
+                    self._loadcells.get_weights(),
+                )
+                self._apply_loadcell_counts()
+
             if frame_count % 30 == 0:
                 elapsed = time.time() - t0
                 fps = frame_count / max(elapsed, 1e-6)
                 self._state.update_fps(fps)
-                if self._loadcells is not None:
-                    self._state.update_loadcells(
-                        self._loadcells.get_layout(),
-                        self._loadcells.get_weights(),
-                    )
-                    self._apply_loadcell_counts()
 
             if frame_count % 300 == 0:
                 fps = frame_count / (time.time() - t0)

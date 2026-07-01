@@ -22,43 +22,72 @@
 
 #include "HX711.h"
 
-// ---------- SHARED CLOCK ----------
+// ---------- PIN TABLE ----------
 // One SCK pin drives ALL HX711s. Each bin still needs its own DOUT (below).
 const int SCK_PIN = 5;          // TODO: set your shared SCK GPIO
 
-// ---------- BIN TABLE ----------
-const int NUM_BINS = 1;          // number of bins (each = one HX711)
+const int J1 = 4;
+const int J2 = 13; //NOT IN USE
+const int J3 = 18;
+const int J4 = 19;
+const int J5 = 21;
+const int J6 = 22;
+const int J7 = 23;
+const int J8 = 25;
+const int J9 = 26; //NOT IN USE, TODO: SOLDER IT
+const int J10 = 27; //NOT IN USE
+const int J11 = 32;
+const int J12 = 33;
+
+// ------- LOADCELL CONST -------
+const float CELL1 = 74.1207;
+const float CELL2 = 68.1992;
+const float CELL3 = 71.6398;
+const float CELL4 = 143.7663;
+const float CELL5 = 141.6425;
+const float CELL6 = 1;
+const float CELL7 = 1009.8922; //TODO FIX MECH SIDE THEN RECALIB
+const float CELL8 = 1056.6241; //TODO FIX MECH SIDE THEN RECALIB
+const float CELL9 = 1; // NOT IN USE, PENDING PORT 9
+const float CELL10 = 140.5147;
 
 struct Bin {
   const char* id;                // JSON key, must match loadcell.py (bin_row_col)
   int   dout;                    // DOUT GPIO for this bin's HX711
   float scale;                   // counts per gram for the combined bin
-  long  offset;                  // tare offset (refreshed at boot)
 };
 
-// TODO: fill in dout pins, and the scale/offset values from calibrate().
-// Until calibrated, scale=1 / offset=0 just gives raw-ish numbers.
+// TODO: fill in dout pins, and the scale values from calibrate().
+// Until calibrated, scale=1 just gives raw-ish numbers.
 //
+const int NUM_BINS = 8;          // number of bins (each = one HX711)
 Bin bins[NUM_BINS] = {
-  // id          dout    scale        offset
-  { "bin_0_0",   13,     142.3,         0 },
-  // { "bin_0_1",   19,     1.0,         0 },
+  // id          dout    scale 
+  { "bin_1",  J4, CELL1 },
+  { "bin_2",  J3, CELL2 },
+  { "bin_3", J1, CELL3 },
+  { "bin_4", J6, CELL4 },
+  { "bin_5", J8, CELL5 },
+  { "bin_7",  J5, CELL7 },
+  { "bin_8", J7, CELL8 },
+  { "bin_10", J12, CELL10 },
+  // { "bin_1_1", J10, CELL, 0 }, //TODO solder the jst for this
+  // { "bin_6", J11, CELL6 },
 };
 
 HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
 const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 182.8;  // known reference mass, grams
+const float CAL_MASS_G     = 612.0;  // known reference mass, grams
 
 // ---------- FILTER ----------
-const int N_SAMPLES = 3;    // readings averaged per bin per cycle
+const int N_SAMPLES = 1;    // readings averaged per bin per cycle
                             // (low keeps the JSON cadence up; HX711 is ~10 SPS)
 
 void setup() {
   Serial.begin(115200);
   while (!Serial) {}
-
   for (int b = 0; b < NUM_BINS; b++) {
     cell[b].begin(bins[b].dout, SCK_PIN);   // shared SCK
   }
@@ -72,15 +101,21 @@ void setup() {
     for (int b = 0; b < NUM_BINS; b++) {
       cell[b].set_scale(bins[b].scale);
     }
-    // Re-tare at boot instead of trusting frozen offsets. Load-cell zero
-    // drifts with temperature, mounting stress, creep and supply voltage,
-    // so a hardcoded offset reads non-zero at no load. Keep platforms EMPTY
-    // at power-up (or FULL, if you want weight to read negative as items leave).
+
     Serial.println(F("Remove ALL load. Taring in 5s..."));
     delay(5000);
     for (int b = 0; b < NUM_BINS; b++) {
+      Serial.print(F("Taring ")); Serial.print(bins[b].id);
+      // Serial.print(F(" (DOUT GPIO=")); Serial.print(bins[b].dout);
+      // Serial.print(F(", SCK GPIO=")); Serial.print(SCK_PIN); Serial.println(F(")..."));
+      // // Don't block forever if the HX711 never signals "ready" (DOUT stuck
+      // // high = bad power/GND/wiring or wrong pin). Bail with a message.
+      // if (!cell[b].wait_ready_timeout(1000)) {
+      //   Serial.println(F("  HX711 NOT RESPONDING -> check power, GND, DT/SCK wiring & pin numbers"));
+      //   continue;
+      // }
       cell[b].tare(20);                       // 20-reading average as zero
-      bins[b].offset = cell[b].get_offset();
+      Serial.println(F("  tared OK"));
     }
     Serial.println(F("Boot tare done. Using stored scale."));
   }
@@ -93,13 +128,12 @@ void loop() {
   Serial.print(F("{\"bins\":{"));
   for (int b = 0; b < NUM_BINS; b++) {
     // One combined reading per bin (cells already summed in hardware).
-    float total = cell[b].get_units(N_SAMPLES);   // (raw - offset)/scale = grams
+    float total = cell[b].get_units(N_SAMPLES);   // (raw)/scale = grams
     if (b > 0) Serial.print(',');
     Serial.print('"'); Serial.print(bins[b].id); Serial.print(F("\":"));
     Serial.print(total, 2);
   }
   Serial.println(F("}}"));
-
   delay(200);   // ~5 Hz output
 }
 
@@ -129,7 +163,6 @@ void calibrate() {
   for (int b = 0; b < NUM_BINS; b++) {
     cell[b].set_scale();      // scale = 1 for raw
     cell[b].tare(20);
-    bins[b].offset = cell[b].get_offset();
   }
   Serial.println(F("Tare done."));
 
@@ -140,12 +173,10 @@ void calibrate() {
     Serial.println(F(" (centred). Measuring in 8s..."));
     delay(8000);
 
-    long raw = cell[b].read_average(20);
-    float countsAboveZero = (float)(raw - bins[b].offset);
+    long raw = cell[b].get_value(20);   // offset-subtracted: true counts above the tared zero
+    float countsAboveZero = (float)(raw);
     bins[b].scale = countsAboveZero / CAL_MASS_G;   // counts/gram for the bin
     cell[b].set_scale(bins[b].scale);
-    cell[b].set_offset(bins[b].offset);
-
     Serial.print(F("  scale = ")); Serial.println(bins[b].scale, 4);
   }
 
@@ -153,9 +184,7 @@ void calibrate() {
   Serial.println(F("\n--- PASTE THESE INTO bins[] ---"));
   for (int b = 0; b < NUM_BINS; b++) {
     Serial.print(F("  { \"")); Serial.print(bins[b].id);
-    Serial.print(F("\", ")); Serial.print(bins[b].dout);
     Serial.print(F(", ")); Serial.print(bins[b].scale, 4);
-    Serial.print(F(", ")); Serial.print(bins[b].offset);
     Serial.println(F(" },"));
   }
   Serial.println(F("Set DO_CALIBRATION = false, then re-upload.\n"));

@@ -2,7 +2,7 @@
 # ================================================
 
 camera:
-  source: 1                   # 0 = default webcam, or video path / RTSP URL
+  source: 0                   # 0 = default webcam, or video path / RTSP URL
   width: 1280
   height: 720
   fps: 30
@@ -13,9 +13,12 @@ camera:
 
 # --- Bin Boundary Detector (from cv-models) ------
 bin_detector:
-  # Native OBB (oriented bounding box) bin model. Relative paths resolve against
-  # the aegis-v2 root, so the pipeline can launch from any working directory.
-  model_path: "./cv-models/models/weights/project_9_yolov8_obb_1.pt"
+  # task selects the detector: "obb" (oriented boxes, project_9 model) or "detect"
+  # (axis-aligned YOLOv8, e.g. the aegis-cv FSV3 model). Relative paths resolve
+  # against the aegis-v2 root, so the pipeline can launch from any working directory.
+  task: "detect"
+  model_path: "./cv-models/models/weights/fsv3_detect.pt"
+  # OBB fallback → task: "obb"  +  model_path: "./cv-models/models/weights/project_9_yolov8_obb_1.pt"
   confidence_threshold: 0.5
   iou_threshold: 0.45
   device: "cpu"                   # "cpu" or "cuda:0"
@@ -98,9 +101,57 @@ bin_assignment:
 # A bin with no entry (or 0) is treated as not part of the job and shows just
 # the live count with no target. Leave commented to disable targets entirely.
 work_order:
-  targets:
-    - [5, 0, 5, 5, 0, 5]   # layer 0 (top) → 6 bins; 0 = not part of the job
-    - [3, 3, 3]            # layer 1 (bottom) → 3 bins
+  # 5-set work-order cycle:
+  # sets:
+  #   - bin_0_5: 2
+  #     bin_0_3: 3
+  #   - bin_1_0: 2
+  #     bin_0_5: 4
+  #     bin_0_4: 5
+  #   - bin_0_4: 2
+  #     bin_1_0: 1
+  #     bin_1_1: 1
+  #   - bin_0_3: 1
+  #     bin_1_2: 1
+  #   - bin_0_2: 4
+  #     bin_1_1: 2
+
+
+  # sets:
+  #   - bin_0_2: 3
+  #     bin_1_2: 2
+  #   - bin_0_4: 4
+  #     bin_1_1: 3
+  #     bin_0_3: 1
+  #   - bin_0_4: 4
+  #     bin_1_1: 3
+  #     bin_0_3: 1
+  #   - bin_0_5: 3
+  #     bin_1_0: 2
+  #     bin_0_2: 1
+  #   - bin_1_1: 2
+  #     bin_0_4: 3
+  #   - bin_0_4: 8
+  #     bin_1_0: 2
+
+  sets:
+    - bin_1_0: 3
+      bin_0_4: 2
+    - bin_0_2: 2
+      bin_0_3: 1
+      bin_1_2: 1
+    - bin_0_2: 2
+      bin_0_3: 1
+      bin_1_2: 1
+    - bin_0_5: 4
+      bin_1_1: 2
+      bin_0_4: 6
+    - bin_0_3: 2
+      bin_1_0: 1
+    - bin_1_1: 4
+      bin_0_2: 3
+
+
 
 # --- Sensing (future: Modbus / Serial) -----------
 sensing:
@@ -119,13 +170,37 @@ sensing:
   # from CV detection only and no weights are shown.
   loadcells:
     enabled: true
-    port: "COM5"           # Silicon Labs CP210x (ESP32) — driver installed 2026-06-17
+    port: "COM3"           # Silicon Labs CP210x (ESP32) — enumerated as COM3 (2026-06-24)
     baudrate: 115200
     stale_after: 5.0       # seconds without data → treated as disconnected
-    # Firmware labels its single cell "bin_0_0"; this cell is physically bin_0_5.
-    # Renamed at the reader before caching, so everything downstream sees bin_0_5.
+    # Recalibrated firmware (esp32/3cell1hx/3cell1hx.ino) emits bin_1..bin_10;
+    # remap to the canonical grid ids + kit box (operator mapping, 2026-06-30).
     bin_remap:
-      bin_0_0: bin_0_5
+      bin_1:  bin_1_0
+      bin_2:  bin_1_1
+      bin_3:  bin_1_2    # BOM bin
+      bin_5:  bin_0_2
+      bin_7:  bin_0_3
+      bin_8:  bin_0_4    # BOM bin
+      bin_10: kit_box    # kitting box
+      bin_4:  bin_0_5    # BOM bin — ASSUMED: you said bin_0_5 → bin_9, but bin_9 was
+                         #   already mapped to bin_0_0 AND is inactive in firmware.
+                         #   bin_4 is the only unmapped ACTIVE cell; confirm or change.
+      bin_6:  bin_0_1    # NOTE: bin_6 is commented-out in firmware → no weight until enabled
+      bin_9:  bin_0_0    # NOTE: bin_9 is commented-out (CELL9=1) → no weight until enabled
+    # Kitting box = the 4th load receptor (separate 5 kg cell, off-camera).
+    # SEQUENTIAL single-bin FSM: one bin is active at a time, so the box's weight
+    # change can only come from that item type (no cross-bin ambiguity). The active
+    # bin's count = round((box − banked_baseline) / unit). See sensing/placement.py
+    # and docs/superpowers/specs/2026-06-25-sequential-single-bin-kitting-fsm.md.
+    kit_box:
+      box_id: kit_box
+      activation_frac: 0.5        # a bin goes ACTIVE once it drops ≥ this fraction of an item
+      wrong_bin_frac: 0.5         # a non-active bin changing ≥ this fraction → wrong-bin fault
+      box_step_tolerance_g: 1.8   # box step may fall this short of a unit and still count
+      box_step_fraction: 0.15     # + this fraction of the unit (big items get more slack)
+      ema_alpha: 0.4              # weight smoothing: higher = snappier, lower = smoother
+      hysteresis: 0.05            # anti-flicker deadband (fraction of an item)
 
 # --- OpenCV Camera Overlay -----------------------
 ui:

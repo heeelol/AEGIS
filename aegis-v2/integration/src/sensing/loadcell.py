@@ -214,7 +214,12 @@ class LoadCellReader:
 if __name__ == "__main__":
     import argparse
 
-    from inventory import InventoryTracker
+    # Works both as `-m integration.src.sensing.loadcell` (package-relative) and
+    # as a plain script run from this directory (flat import).
+    try:
+        from .inventory import InventoryTracker
+    except ImportError:
+        from inventory import InventoryTracker
 
     parser = argparse.ArgumentParser(description="Standalone load-cell serial tester")
     parser.add_argument("--port", default="/dev/ttyUSB0",

@@ -7,15 +7,24 @@
 #
 # Edit unit weights and bin assignments here; nothing about counts is needed.
 
+# Component catalogue (names + unit weights) — integrated from v2_test 2026-06-30.
 items:
   # item_name: { unit_g: <grams per single item> }
-  bolt_m6:   { unit_g: 13.9 }
-  washer_m6: { unit_g: 1.1 }
-  amp:       { unit_g: 3.8 }   # one AMP = 3.8 g (confirmed live 2026-06-17)
+  pcb_connector:            { unit_g: 128.0 }
+  copper_rod:          { unit_g: 23.9 }
+  te_completed_part:   { unit_g: 12.5 }
+  te_uncompleted_part: { unit_g: 3.6 }
+  m6_cross_screw:      { unit_g: 3.2 }
+  shelf_bracket:       { unit_g: 5.1 }
+  bin_conn_big:         { unit_g: 15.1 }
+  bin_conn_med:         { unit_g: 9.8 }
 
+# Bin -> component links. bin_id = canonical grid id (AFTER bin_remap in settings.yaml).
 bins:
-  # bin_id: item_name   (bin_id matches the load-cell keys, AFTER bin_remap,
-  # e.g. firmware bin_0_0 -> bin_0_5 via sensing.loadcells.bin_remap)
-  bin_0_0: bolt_m6
-  bin_0_5: amp
-  #bin_0_1: washer_m6
+  bin_0_2: te_uncompleted_part
+  bin_0_3: te_completed_part
+  bin_0_4: m6_cross_screw
+  bin_0_5: shelf_bracket
+  bin_1_0: pcb_connector
+  bin_1_1: copper_rod
+  bin_1_2: bin_conn_big

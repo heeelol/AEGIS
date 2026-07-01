@@ -1,7 +1,7 @@
 """
 Snapshot OBB driver
 ===================
-Two modes over the aegis-core OBB handoff (``bins.json`` + ``snapshot.jpg``):
+Two modes over the aegis-cv OBB handoff (``bins.json`` + ``snapshot.jpg``):
 
 * ``--calibrate`` (once per workstation, all 9 bins): define the grid via
   ``grid_calibrator.calibrate_grid`` and write ``grid_calibration.json`` (+ overlay).
@@ -15,9 +15,9 @@ fallback but is no longer used by ``main``.
 Run (from aegis-v2/integration) as a PATH SCRIPT — this bypasses the detectors
 package __init__, which eagerly imports cv2 / ultralytics:
     # calibrate the workstation (all 9 bins present)
-    python src/detectors/snapshot_obb.py --bins ../../aegis-core/runs/bins_obb_raw/bins.json --calibrate
+    python src/detectors/snapshot_obb.py --bins ../../aegis-cv/runs/bins_obb_raw/bins.json --calibrate
     # then, per kitting list
-    python src/detectors/snapshot_obb.py --bins ../../aegis-core/runs/bins_obb_raw/bins.json
+    python src/detectors/snapshot_obb.py --bins ../../aegis-cv/runs/bins_obb_raw/bins.json
 """
 from __future__ import annotations
 
@@ -133,10 +133,10 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
     here = os.path.dirname(__file__)
     default_bins = os.path.abspath(os.path.join(
-        here, "..", "..", "..", "..", "aegis-core", "runs", "bins_obb_raw", "bins.json"))
+        here, "..", "..", "..", "..", "aegis-cv", "runs", "bins_obb_raw", "bins.json"))
 
     ap = argparse.ArgumentParser(description="Calibrate the bin grid, or match a snapshot to it")
-    ap.add_argument("--bins", default=default_bins, help="path to aegis-core bins.json")
+    ap.add_argument("--bins", default=default_bins, help="path to aegis-cv bins.json")
     ap.add_argument("--calibrate", action="store_true",
                     help="define the grid from an all-9-bins snapshot (writes grid_calibration.json)")
     ap.add_argument("--calibration", default=None,
@@ -146,7 +146,7 @@ def main():
     args = ap.parse_args()
 
     if not os.path.exists(args.bins):
-        logger.error("bins.json not found: %s — run the aegis-core OBB script first.", args.bins)
+        logger.error("bins.json not found: %s — run the aegis-cv OBB script first.", args.bins)
         return
     try:
         with open(args.bins) as f:
