@@ -78,6 +78,11 @@ class PipelineState:
         self._kit: dict = {}
         self._complete_requested: bool = False
 
+        # Work-order cycle: latest {set_number, total_sets, complete} snapshot,
+        # plus a one-shot "start new cycle" request raised by the UI.
+        self._cycle: dict = {}
+        self._restart_requested: bool = False
+
         # Sequential pick lock: the one bin currently in progress. The first pick on
         # a bin locks it (only it counts); hitting its target completes it (added to
         # `_done`) and releases the lock so any other bin can be started next.
@@ -207,6 +212,11 @@ class PipelineState:
         with self._lock:
             self._kit = dict(kit)
 
+    def update_cycle(self, cycle: dict) -> None:
+        """Store the latest cycle/set snapshot (called by the pipeline)."""
+        with self._lock:
+            self._cycle = dict(cycle)
+
     def request_complete(self) -> None:
         """UI asks to close the current kit (one-shot; consumed by the pipeline)."""
         with self._lock:
@@ -217,6 +227,18 @@ class PipelineState:
         with self._lock:
             pending = self._complete_requested
             self._complete_requested = False
+            return pending
+
+    def request_restart(self) -> None:
+        """UI asks to start a new cycle from set 1 (one-shot; consumed by pipeline)."""
+        with self._lock:
+            self._restart_requested = True
+
+    def consume_restart_request(self) -> bool:
+        """Pipeline checks/clears the new-cycle request. True if one was pending."""
+        with self._lock:
+            pending = self._restart_requested
+            self._restart_requested = False
             return pending
 
     # ── Readers (called by FastAPI endpoints) ────────────────
@@ -253,9 +275,16 @@ class PipelineState:
         """
         with self._lock:
             kit = dict(self._kit)
-            kit["active"] = self._active_bin
-            kit["done"] = sorted(self._done)
+            if "active" not in kit:
+                kit["active"] = self._active_bin
+            if "done" not in kit:
+                kit["done"] = sorted(self._done)
             return kit
+
+    def get_cycle(self) -> dict:
+        """Latest cycle/set state for the dashboard: {set_number, total_sets, complete}."""
+        with self._lock:
+            return dict(self._cycle)
 
     def get_hands(self) -> list[dict]:
         with self._lock:

@@ -12,6 +12,7 @@ sys.path.insert(0, _ROOT)
 
 from integration.src.pipeline import Pipeline, derive_pick_counts  # noqa: E402
 from integration.src.sensing.inventory import InventoryTracker  # noqa: E402
+from integration.src.sensing.placement import PlacementTracker  # noqa: E402
 from integration.src.ui.state import PipelineState  # noqa: E402
 
 
@@ -58,13 +59,18 @@ def test_derive_counts_clamps_and_ignores_unmapped(tmp_path):
 def _pipeline_with(state, reader, tracker):
     p = object.__new__(Pipeline)        # bypass __init__ (no camera/config)
     p._state, p._loadcells, p._inventory = state, reader, tracker
+    
+    units = tracker.units()
+    targets = {b: 5 for b in units}
+    p._placement = PlacementTracker(units, targets, "kit_box", ema_alpha=1.0)
+    p._placement.tare({k: 0.0 for k in units} | {"kit_box": 0.0})
     return p
 
 
 def test_apply_counts_sets_state_when_connected(tmp_path):
     state = PipelineState()
     state.update_bins({"bin_0_5": {"x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1}})
-    p = _pipeline_with(state, _FakeReader({"bin_0_5": -7.6}, True), _tracker(tmp_path))
+    p = _pipeline_with(state, _FakeReader({"bin_0_5": -7.6, "kit_box": 7.6}, True), _tracker(tmp_path))
 
     p._apply_loadcell_counts()
 

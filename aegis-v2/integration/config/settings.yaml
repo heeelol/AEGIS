@@ -101,12 +101,57 @@ bin_assignment:
 # A bin with no entry (or 0) is treated as not part of the job and shows just
 # the live count with no target. Leave commented to disable targets entirely.
 work_order:
-  targets:
-    # Kitting demo: BOM = bin_0_4 (3.6 g) + bin_0_5 (3.1 g) on the top row and
-    # bin_1_2 (67.1 g) on the bottom row, target 3 each. Every other bin is 0 →
-    # greyed "not in BOM".
-    - [0, 0, 0, 0, 3, 3]   # layer 0 (top) → 6 bins; bin_0_4 & bin_0_5
-    - [0, 0, 3]            # layer 1 (bottom) → 3 bins; bin_1_2
+  # 5-set work-order cycle:
+  # sets:
+  #   - bin_0_5: 2
+  #     bin_0_3: 3
+  #   - bin_1_0: 2
+  #     bin_0_5: 4
+  #     bin_0_4: 5
+  #   - bin_0_4: 2
+  #     bin_1_0: 1
+  #     bin_1_1: 1
+  #   - bin_0_3: 1
+  #     bin_1_2: 1
+  #   - bin_0_2: 4
+  #     bin_1_1: 2
+
+
+  # sets:
+  #   - bin_0_2: 3
+  #     bin_1_2: 2
+  #   - bin_0_4: 4
+  #     bin_1_1: 3
+  #     bin_0_3: 1
+  #   - bin_0_4: 4
+  #     bin_1_1: 3
+  #     bin_0_3: 1
+  #   - bin_0_5: 3
+  #     bin_1_0: 2
+  #     bin_0_2: 1
+  #   - bin_1_1: 2
+  #     bin_0_4: 3
+  #   - bin_0_4: 8
+  #     bin_1_0: 2
+
+  sets:
+    - bin_1_0: 3
+      bin_0_4: 2
+    - bin_0_2: 2
+      bin_0_3: 1
+      bin_1_2: 1
+    - bin_0_2: 2
+      bin_0_3: 1
+      bin_1_2: 1
+    - bin_0_5: 4
+      bin_1_1: 2
+      bin_0_4: 6
+    - bin_0_3: 2
+      bin_1_0: 1
+    - bin_1_1: 4
+      bin_0_2: 3
+
+
 
 # --- Sensing (future: Modbus / Serial) -----------
 sensing:
@@ -155,7 +200,7 @@ sensing:
       box_step_tolerance_g: 1.8   # box step may fall this short of a unit and still count
       box_step_fraction: 0.15     # + this fraction of the unit (big items get more slack)
       ema_alpha: 0.4              # weight smoothing: higher = snappier, lower = smoother
-      hysteresis: 0.25            # anti-flicker deadband (fraction of an item)
+      hysteresis: 0.05            # anti-flicker deadband (fraction of an item)
 
 # --- OpenCV Camera Overlay -----------------------
 ui:

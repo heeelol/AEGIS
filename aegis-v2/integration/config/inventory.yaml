@@ -10,20 +10,21 @@
 # Component catalogue (names + unit weights) — integrated from v2_test 2026-06-30.
 items:
   # item_name: { unit_g: <grams per single item> }
-  pcb_pipe:            { unit_g: 130.5 }
+  pcb_connector:            { unit_g: 128.0 }
   copper_rod:          { unit_g: 23.9 }
   te_completed_part:   { unit_g: 12.5 }
   te_uncompleted_part: { unit_g: 3.6 }
   m6_cross_screw:      { unit_g: 3.2 }
   shelf_bracket:       { unit_g: 5.1 }
-  bin_sup_big:         { unit_g: 15.1 }
-  bin_sup_med:         { unit_g: 9.8 }
+  bin_conn_big:         { unit_g: 15.1 }
+  bin_conn_med:         { unit_g: 9.8 }
 
 # Bin -> component links. bin_id = canonical grid id (AFTER bin_remap in settings.yaml).
-# TODO (manual — you said you'll link these yourself): add one line per BOM bin, e.g.
-#   bin_0_4: te_uncompleted_part
-#   bin_0_5: m6_cross_screw
-#   bin_1_2: pcb_pipe
-# Available items: pcb_pipe, copper_rod, te_completed_part, te_uncompleted_part,
-#                  m6_cross_screw, shelf_bracket, bin_sup_big, bin_sup_med
-bins: {}
+bins:
+  bin_0_2: te_uncompleted_part
+  bin_0_3: te_completed_part
+  bin_0_4: m6_cross_screw
+  bin_0_5: shelf_bracket
+  bin_1_0: pcb_connector
+  bin_1_1: copper_rod
+  bin_1_2: bin_conn_big

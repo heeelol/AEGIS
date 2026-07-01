@@ -91,9 +91,23 @@ def create_app(state: Optional[PipelineState] = None) -> FastAPI:
 
     @app.post("/api/kit/complete")
     def complete_kit():
-        """Operator closes the current kit; the pipeline re-tares for the next one."""
+        """Operator confirms the current SET; the pipeline advances the cycle + re-tares."""
         if _state:
             _state.request_complete()
+        return {"status": "ok"}
+
+    @app.get("/api/cycle")
+    def get_cycle():
+        """Cycle/set state: {set_number, total_sets, complete}. Empty until a work order runs."""
+        if _state is None:
+            return {}
+        return _state.get_cycle()
+
+    @app.post("/api/cycle/restart")
+    def restart_cycle():
+        """Operator starts a new cycle from set 1 (from the cycle-complete popup)."""
+        if _state:
+            _state.request_restart()
         return {"status": "ok"}
 
     @app.get("/api/hands")

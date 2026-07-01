@@ -67,39 +67,38 @@ def test_overpick_badge_not_fault():
     assert s.overpick == {"bin_1_2": 1} and s.alert is None and s.state == "PICKING"
 
 
-def test_overpack_fault():
+def test_overpack_no_fault():
     t = tracker()
     s = settle(t, w(b12=-4 * 67.1, box=4 * 67.1))
-    assert s.state == "FAULT" and s.alert["type"] == "overpack-kit"
+    assert s.state == "PICKING" and s.alert is None
 
 
-def test_pick_from_wrong_bin_fault():
+def test_pick_from_wrong_bin_no_fault():
     t = tracker()
     settle(t, w(b04=-3.6))                       # bin_0_4 active
     s = settle(t, w(b04=-3.6, b05=-16.6))        # touch a locked bin
-    assert s.state == "FAULT" and s.alert["type"] == "pick-from-wrong-bin"
-    assert s.alert["bin"] == "bin_0_5"
+    assert s.state == "PICKING" and s.alert is None
 
 
-def test_return_to_wrong_bin_fault():
+def test_return_to_wrong_bin_no_fault():
     t = tracker()
     settle(t, w(b04=-3.6))                        # bin_0_4 active
     s = settle(t, w(b04=-3.6, b05=+20.0))         # item dropped INTO a locked bin
-    assert s.state == "FAULT" and s.alert["type"] == "return-to-wrong-bin"
+    assert s.state == "PICKING" and s.alert is None
 
 
-def test_remove_from_kit_fault():
+def test_remove_from_kit_no_fault():
     t = tracker()
     settle(t, w(b12=-67.1, box=67.1))             # place 1 (holding==0)
     s = settle(t, w(b12=-67.1, box=0.0))          # box emptied with empty hands
-    assert s.state == "FAULT" and s.alert["type"] == "remove-from-kit"
+    assert s.state == "PICKING" and s.alert is None
 
 
-def test_fault_auto_clears():
+def test_no_fault_throughout():
     t = tracker()
     settle(t, w(b04=-3.6))
-    assert settle(t, w(b04=-3.6, b05=-16.6)).state == "FAULT"   # wrong bin
-    s = settle(t, w(b04=-3.6, b05=0.0))           # extra returned to the locked bin
+    assert settle(t, w(b04=-3.6, b05=-16.6)).state == "PICKING"   # wrong bin (ignored)
+    s = settle(t, w(b04=-3.6, b05=0.0))
     assert s.alert is None and s.state == "PICKING"
 
 

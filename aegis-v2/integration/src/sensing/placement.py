@@ -77,6 +77,7 @@ class PlacementTracker:
         self._active: Optional[str] = None
         self._done: set[str] = set()
         self._removed = {b: 0 for b in self._units}
+        self._added = {b: 0 for b in self._units}
         self._placed = {b: 0 for b in self._units}
 
     @property
@@ -94,6 +95,15 @@ class PlacementTracker:
         self._offsets = {k: float(v) for k, v in weights.items()}
         self._ema = {}
         self._reset_run()
+
+    def set_targets(self, targets):
+        """Replace the per-bin BOM targets (e.g. when the cycle advances a set).
+
+        Keyed by canonical bin id; bins absent from ``targets`` (or not in this
+        tracker's units) get 0. Keeps an entry for every unit so update() never
+        KeyErrors.
+        """
+        self._targets = {b: int(targets.get(b, 0)) for b in self._units}
 
     def _adj(self, weights, key):
         return float(weights.get(key, 0.0)) - self._offsets.get(key, 0.0)
@@ -116,12 +126,18 @@ class PlacementTracker:
     def _raw_removed(self, sm, b):
         return max(0.0, -sm.get(b, 0.0)) / self._units[b]
 
+    def _raw_added(self, sm, b):
+        return max(0.0, sm.get(b, 0.0)) / self._units[b]
+
     def update(self, weights):
         sm = self._smooth(weights)
 
-        # 1) per-bin removal (own cell, debounced)
+        # 1) per-bin removal / addition (own cell, debounced)
         for b in self._units:
             self._removed[b] = self._hysteretic(self._raw_removed(sm, b), self._removed[b])
+            self._added[b] = self._hysteretic(self._raw_added(sm, b), self._added[b])
+
+        box = max(0.0, self._adj(sm, self._box_id))  # smoothed, tared box weight
 
         # 2) activation: in IDLE, the clearest not-done bin past the threshold goes active
         if self._active is None:
@@ -131,31 +147,30 @@ class PlacementTracker:
                 self._active = max(cands, key=lambda b: self._raw_removed(sm, b))
 
         active = self._active
-        box = max(0.0, self._adj(sm, self._box_id))  # smoothed, tared box weight
         prev_placed = self._placed.get(active, 0) if active else 0
 
         fault = None
 
-        # 3) wrong-bin faults: any non-active bin deviating from its expected state.
+        # 3) wrong-bin faults: any non-active bin deviating from its expected state. (Disabled)
         for b in self._units:
             if b == active:
                 continue
             expected = self._targets[b] if b in self._done else 0
             r = self._removed[b]
-            added = sm.get(b, 0.0) > self._wrong * self._units[b]  # weight rose above full
+            added = self._added[b] >= 1
             if b in self._done:
                 if r < expected or added:
-                    fault = fault or self._fault("return-to-wrong-bin", b)
+                    pass
                 elif r > expected:
-                    fault = fault or self._fault("pick-from-wrong-bin", b)
+                    pass
             else:  # available/locked, expected empty change
                 if added:
-                    fault = fault or self._fault("return-to-wrong-bin", b)
+                    pass
                 elif r >= 1:
                     # In IDLE this bin would have been activated above; if we are
                     # PICKING another bin, a drop here is a wrong-bin pick.
                     if active is not None:
-                        fault = fault or self._fault("pick-from-wrong-bin", b)
+                        pass
 
         # 4) active-bin counting + its faults
         if active is not None:
@@ -166,18 +181,16 @@ class PlacementTracker:
 
             # remove-from-kit: empty hands but the box dropped below what's counted.
             if holding <= 0 and (box < committed - self._step_tol(active)):
-                fault = fault or self._fault("remove-from-kit", active)
-                # freeze the count while faulted (don't silently un-count)
+                # freeze the count while weight drops (don't silently un-count)
                 placed = prev_placed
             else:
                 placed = self._hysteretic(max(0.0, raw_placed), prev_placed)
+            
+            placed = min(placed, self._removed[active])
             self._placed[active] = placed
 
-            if placed > self._targets[active]:
-                fault = self._fault("overpack-kit", active)  # overrides; highest severity
-
-            # completion -> bank + advance (only when clean)
-            if (fault is None and placed == self._targets[active]
+            # completion -> bank + advance
+            if (placed == self._targets[active]
                     and self._removed[active] == self._targets[active]):
                 self._done.add(active)
                 self._baseline_box = box
@@ -186,14 +199,14 @@ class PlacementTracker:
         else:
             # IDLE remove-from-kit: box dropped below the banked total, empty hands.
             if box < self._baseline_box - max(self._step_floor, 1.0):
-                fault = fault or self._fault("remove-from-kit", None)
+                pass
 
         placed = dict(self._placed)
         removed = dict(self._removed)
         overpick = {b: removed[b] - self._targets[b]
                     for b in self._units if removed[b] > self._targets[b]}
 
-        complete = bool(self._units) and len(self._done) == len(self._units)
+        complete = any(t > 0 for t in self._targets.values()) and all(b in self._done for b, t in self._targets.items() if t > 0)
         if fault:
             state = "FAULT"
         elif complete:

@@ -40,6 +40,7 @@ _DEFAULT_CONFIG = str(_ROOT / "integration" / "config" / "settings.yaml")
 from integration.src.engine import BinAssignmentEngine, BinRegion, OcclusionHold
 from integration.src.detectors.foreground import ForegroundModel
 from integration.src.sensing import LoadCellReader, PlacementTracker
+from integration.src.engine.cycle import CycleManager
 from integration.src.ui.overlay import OverlayUI
 from integration.src.ui.state import PipelineState
 
@@ -107,6 +108,7 @@ class Pipeline:
         self._loadcells: Optional[LoadCellReader] = None
         self._inventory = None                    # InventoryTracker (built with load cells)
         self._placement: Optional[PlacementTracker] = None  # kitting-box placement counting
+        self._cycle: Optional[CycleManager] = None           # work-order cycle of sets
         self._geofences: dict = {}
         self._rotate_180: bool = bool(
             self._config.get("camera", {}).get("rotate_180", False))
@@ -305,35 +307,23 @@ class Pipeline:
         return geofences
 
     def _apply_work_order(self) -> None:
-        """Load predetermined target pick counts and push them to the dashboard.
+        """Push the CURRENT set's target pick counts to the dashboard.
 
-        ``work_order.targets`` is a list-of-lists mirroring the bin layout: one
-        inner list per layer, one number per bin. Each maps to a ``bin_{row}_{col}``
-        id so the dashboard can show "current / target" (e.g. 2/5). Bins with no
-        entry keep target 0 and display just the live count.
+        The work order is a cycle of sets (``work_order.sets``); each set is a
+        ``{bin_id: quantity}`` pick list (canonical grid ids). Bins absent from
+        the current set get target 0 — marked not-in-use (using=False) by
+        set_work_order, so a hand entering one trips the wrong-bin cross.
+        Advancing or restarting the cycle re-applies this for the new set.
         """
-        wo_cfg = self._config.get("work_order", {}) or {}
-        targets = wo_cfg.get("targets")
-        if not targets:
-            logger.info("No work order configured — bins show live count only")
-            return
-
-        # Build a target for EVERY bin on the layout. A bin's target comes from
-        # the targets grid by its (row, col); bins with target 0 — or absent
-        # from the grid entirely — are marked not-in-use (using=False) by
-        # set_work_order, so a hand entering one trips the wrong-bin warning.
-        bin_targets: dict = {}
-        for bin_id in self._geofences:
-            row, col = PipelineState._parse_bin_id(bin_id)
-            try:
-                bin_targets[bin_id] = int(targets[row][col])
-            except (IndexError, TypeError, ValueError):
-                bin_targets[bin_id] = 0
-
+        self._ensure_cycle()
+        cur = self._cycle.current_targets()
+        bin_targets = {bin_id: int(cur.get(bin_id, 0)) for bin_id in self._geofences}
         self._state.set_work_order(bin_targets)
+        self._state.update_cycle(self._cycle.snapshot())
         in_use = sum(1 for t in bin_targets.values() if t > 0)
-        logger.info("Work order applied: %d/%d bins in use, %d total items",
-                    in_use, len(bin_targets), sum(bin_targets.values()))
+        logger.info("Set %d/%d applied: %d bins in use, %d items",
+                    self._cycle.set_number, self._cycle.total_sets,
+                    in_use, sum(bin_targets.values()))
 
     def _init_loadcells(self) -> None:
         """Initialise the load-cell reader and merge its layout into shared state.
@@ -366,7 +356,9 @@ class Pipeline:
             activation_frac=box_cfg.get("activation_frac", 0.5),
             wrong_bin_frac=box_cfg.get("wrong_bin_frac", 0.5),
         )
-        self._placement.tare(self._loadcells.get_weights())  # software zero at boot
+        boot_weights = self._loadcells.get_weights()
+        self._placement.tare(boot_weights)  # software zero at boot
+        self._empty_box_raw = float(boot_weights.get("kit_box", 0.0))
 
         layout = self._loadcells.get_layout()
         self._state.update_loadcells(layout, self._loadcells.get_weights())
@@ -380,13 +372,51 @@ class Pipeline:
             logger.info("Load cells not connected (stub) — layout from CV only")
 
     def _target_for(self, bin_id: str) -> int:
-        """Work-order target for a bin id, parsed from work_order.targets grid."""
-        targets = (self._config.get("work_order", {}) or {}).get("targets") or []
-        row, col = PipelineState._parse_bin_id(bin_id)
-        try:
-            return int(targets[row][col])
-        except (IndexError, TypeError, ValueError):
-            return 0
+        """Target for ``bin_id`` under the current set of the work-order cycle."""
+        self._ensure_cycle()
+        return int(self._cycle.current_targets().get(bin_id, 0))
+
+    # ── Cycle / set sequencing ───────────────────────────────
+    def _ensure_cycle(self) -> None:
+        if self._cycle is None:
+            sets = (self._config.get("work_order", {}) or {}).get("sets")
+            self._cycle = CycleManager(sets)
+
+    def _apply_set_to_placement(self) -> None:
+        if self._placement is not None:
+            self._placement.set_targets(self._cycle.current_targets())
+
+    def _advance_set(self, weights: dict) -> None:
+        """Operator confirmed the current set: advance, re-target, and wait to empty."""
+        self._ensure_cycle()
+        just_done = self._cycle.advance()
+        self._apply_work_order()            # push next set's targets + cycle snapshot
+        self._apply_set_to_placement()
+        self._waiting_to_empty = True
+        logger.info("Set confirmed -> set %d/%d%s (waiting for box to be emptied)", self._cycle.set_number,
+                    self._cycle.total_sets, "  (CYCLE COMPLETE)" if just_done else "")
+
+    def _restart_cycle(self, weights: dict) -> None:
+        """Operator started a new cycle from the cycle-complete popup."""
+        self._ensure_cycle()
+        self._cycle.restart()
+        self._apply_work_order()
+        self._apply_set_to_placement()
+        self._waiting_to_empty = False
+        if self._placement is not None:
+            self._placement.tare(weights)
+            self._empty_box_raw = float(weights.get("kit_box", 0.0))
+        logger.info("Cycle restarted -> set 1/%d", self._cycle.total_sets)
+
+    def _service_cycle_requests(self) -> None:
+        """Handle operator set-complete / cycle-restart each loop (with or
+        without load cells)."""
+        if self._state.consume_complete_request():
+            w = self._loadcells.get_weights() if self._loadcells is not None else {}
+            self._advance_set(w)
+        if self._state.consume_restart_request():
+            w = self._loadcells.get_weights() if self._loadcells is not None else {}
+            self._restart_cycle(w)
 
     def _apply_loadcell_counts(self) -> None:
         """Drive BOM-bin pick counts from the kitting box (placement-driven).
@@ -401,8 +431,32 @@ class Pipeline:
         if not self._loadcells.is_connected():
             return
         weights = self._loadcells.get_weights()
-        if self._state.consume_complete_request():
-            self._placement.tare(weights)
+
+        # If waiting to empty, block counts and prompt operator until box is physically cleared
+        if getattr(self, "_waiting_to_empty", False):
+            raw_box = float(weights.get("kit_box", 0.0))
+            empty_raw = getattr(self, "_empty_box_raw", 0.0)
+            if abs(raw_box - empty_raw) <= 4.0:
+                self._placement.tare(weights)
+                self._empty_box_raw = float(weights.get("kit_box", 0.0))
+                self._waiting_to_empty = False
+                logger.info("Kitting box empty detected. Next set activated and tared.")
+            else:
+                self._state.update_kit({
+                    "placed": {},
+                    "removed": {},
+                    "targets": {},
+                    "active": None,
+                    "done": [],
+                    "box_grams": round(raw_box - empty_raw, 1),
+                    "complete": False,
+                    "state": "IDLE",
+                    "overpick": {},
+                    "alert": {"type": "empty-kit-box", "message": "PLEASE EMPTY KITTING BOX TO START NEXT SET"},
+                    "box_id": self._placement.box_id,
+                })
+                return
+
         kit = self._placement.update(weights)
         for bin_id, count in kit.placed.items():
             self._state.set_pick_count(bin_id, count)
@@ -689,6 +743,10 @@ class Pipeline:
             # Load cells are cheap to poll (the reader caches in a bg thread), so
             # refresh counts frequently for a responsive, smooth counter — not the
             # old every-30-frames (~1.7 s) cadence that made it feel laggy.
+            # Operator set-complete / cycle-restart — serviced every loop, with
+            # or without load cells.
+            self._service_cycle_requests()
+
             if self._loadcells is not None and frame_count % 3 == 0:
                 self._state.update_loadcells(
                     self._loadcells.get_layout(),
