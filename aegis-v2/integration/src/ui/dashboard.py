@@ -96,6 +96,15 @@ def create_app(state: Optional[PipelineState] = None) -> FastAPI:
             _state.request_complete()
         return {"status": "ok"}
 
+    @app.post("/api/kit/confirm-empty")
+    def confirm_empty():
+        """Operator confirms the kitting box has been physically emptied; the
+        pipeline tares the receptors and unblocks the next set. No automatic
+        weight check — the operator verifies by hand."""
+        if _state:
+            _state.request_empty_confirmed()
+        return {"status": "ok"}
+
     @app.get("/api/cycle")
     def get_cycle():
         """Cycle/set state: {set_number, total_sets, complete}. Empty until a work order runs."""
