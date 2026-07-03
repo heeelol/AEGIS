@@ -18,7 +18,9 @@ Model
 * Four red faults (auto-clear when corrected): overpack-kit, remove-from-kit
   (only checked when ``holding == 0``), pick-from-wrong-bin, return-to-wrong-bin.
 
-All weights are EMA-smoothed; integer counts use a hysteresis deadband.
+All weights are EMA-smoothed; integer counts use a hysteresis deadband, floored
+in absolute grams (``count_tolerance_g``) so light items keep a real margin
+instead of a near-zero percentage-of-unit deadband.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ class PlacementTracker:
         box_step_fraction: float = 0.15,
         activation_frac: float = 0.5,
         wrong_bin_frac: float = 0.5,
+        count_tolerance_g: float | None = None,
     ):
         self._units = {b: float(u) for b, u in units_g.items() if u and u > 0}
         self._targets = {b: int(t) for b, t in targets.items()}
@@ -67,6 +70,19 @@ class PlacementTracker:
         self._step_frac = float(box_step_fraction)
         self._activation = float(activation_frac)
         self._wrong = float(wrong_bin_frac)
+        # Absolute-gram floor for count rounding (removed/added/placed). A pure
+        # percentage of unit weight (self._h) shrinks to near-nothing for light
+        # items (e.g. 0.05 * 3.6g = 0.18g) — well below the scale's real noise
+        # floor — so small items round on noise instead of real picks/placements.
+        # NOT defaulted to box_step_tolerance_g: that's calibrated for the box's
+        # much coarser remove-from-kit check and is large enough (e.g. 1.8g on a
+        # 3.6g item) to push the rounding threshold to ~100% of the unit weight,
+        # which real items at that size can't reliably reach at all. 0.3g is a
+        # modest, independent default — verified to leave clean single-item
+        # rounding unchanged while still giving small items more margin than the
+        # bare percentage deadband against real scale noise.
+        self._count_floor = (float(count_tolerance_g) if count_tolerance_g is not None
+                             else 0.3)
 
         self._offsets: dict[str, float] = {}
         self._ema: dict[str, float] = {}
@@ -90,6 +106,11 @@ class PlacementTracker:
 
     def _step_tol(self, b):
         return max(self._step_floor, self._step_frac * self._units[b])
+
+    def _count_h(self, b):
+        """Hysteresis for item-count rounding, in units of one item — floored in
+        absolute grams so tiny items keep a real margin (see __init__ comment)."""
+        return max(self._h, self._count_floor / self._units[b])
 
     def tare(self, weights):
         self._offsets = {k: float(v) for k, v in weights.items()}
@@ -115,11 +136,13 @@ class PlacementTracker:
                             else self._alpha * adj + (1 - self._alpha) * self._ema[k])
         return self._ema
 
-    def _hysteretic(self, raw, current):
+    def _hysteretic(self, raw, current, h=None):
+        if h is None:
+            h = self._h
         n = current
-        while raw >= n + 0.5 + self._h:
+        while raw >= n + 0.5 + h:
             n += 1
-        while n > 0 and raw <= n - 0.5 - self._h:
+        while n > 0 and raw <= n - 0.5 - h:
             n -= 1
         return n
 
@@ -134,10 +157,11 @@ class PlacementTracker:
 
         # 1) per-bin removal / addition (own cell, debounced)
         for b in self._units:
-            self._removed[b] = self._hysteretic(self._raw_removed(sm, b), self._removed[b])
-            self._added[b] = self._hysteretic(self._raw_added(sm, b), self._added[b])
+            self._removed[b] = self._hysteretic(self._raw_removed(sm, b), self._removed[b], self._count_h(b))
+            self._added[b] = self._hysteretic(self._raw_added(sm, b), self._added[b], self._count_h(b))
 
-        box = max(0.0, self._adj(sm, self._box_id))  # smoothed, tared box weight
+        raw_box = max(0.0, self._adj(weights, self._box_id))    # unsmoothed, tared
+        box = max(0.0, self._adj(sm, self._box_id))              # smoothed, tared
 
         # 2) activation: in IDLE, the clearest not-done bin past the threshold goes active
         if self._active is None:
@@ -145,6 +169,30 @@ class PlacementTracker:
                      if b not in self._done and self._raw_removed(sm, b) >= self._activation]
             if cands:
                 self._active = max(cands, key=lambda b: self._raw_removed(sm, b))
+
+        # While idle, keep the box baseline tracking the settled EMA, instead of
+        # freezing it once at completion. The EMA needs a few frames to catch up
+        # after a step change, and completion can fire before it has; freezing
+        # then banks a stale value, so the next bin's raw_placed reads the tail
+        # of THIS bin's convergence as if it were newly placed weight. Continuous
+        # tracking absorbs that settling during the operator's natural
+        # bin-to-bin transition — no added wait, since it just piggybacks on
+        # time that already elapses.
+        #
+        # Two guards, not just "no bin active":
+        #  - Runs AFTER the activation check, not before: on the exact frame a
+        #    bin activates, the box may already reflect a genuine same-frame
+        #    placement (a single observed sample, or a fast remove-then-place
+        #    within one poll interval) — snapping the baseline to that already-
+        #    elevated value would erase the very placement being measured.
+        #  - Only commits once the smoothed box has actually caught up to its
+        #    raw reading (within the box's own noise floor, self._step_floor):
+        #    the box's OWN EMA can still be mid-transition from an earlier event
+        #    (e.g. right as it starts rising for this bin's first placement) even
+        #    while no bin is active yet — banking an unconverged mid-transition
+        #    value is just as wrong as banking one at the instant of activation.
+        if self._active is None and abs(raw_box - box) <= self._step_floor:
+            self._baseline_box = box
 
         active = self._active
         prev_placed = self._placed.get(active, 0) if active else 0
@@ -184,7 +232,7 @@ class PlacementTracker:
                 # freeze the count while weight drops (don't silently un-count)
                 placed = prev_placed
             else:
-                placed = self._hysteretic(max(0.0, raw_placed), prev_placed)
+                placed = self._hysteretic(max(0.0, raw_placed), prev_placed, self._count_h(active))
             
             placed = min(placed, self._removed[active])
             self._placed[active] = placed
