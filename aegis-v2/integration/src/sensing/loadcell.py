@@ -157,6 +157,11 @@ class LoadCellReader:
 
     # ── Public interface (unchanged contract) ────────────────
 
+    @property
+    def is_enabled(self) -> bool:
+        """True when load cells are enabled in config, regardless of connection state."""
+        return self._enabled
+
     def is_connected(self) -> bool:
         """True when the port is open and data arrived within ``stale_after``."""
         if self._serial is None:

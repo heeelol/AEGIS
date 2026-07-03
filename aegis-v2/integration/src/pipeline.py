@@ -355,8 +355,9 @@ class Pipeline:
             box_step_fraction=box_cfg.get("box_step_fraction", 0.15),
             activation_frac=box_cfg.get("activation_frac", 0.5),
             wrong_bin_frac=box_cfg.get("wrong_bin_frac", 0.5),
+            count_tolerance_g=box_cfg.get("count_tolerance_g"),
         )
-        boot_weights = self._loadcells.get_weights()
+        boot_weights = self._wait_for_loadcell_data()
         self._placement.tare(boot_weights)  # software zero at boot
         self._empty_box_raw = float(boot_weights.get("kit_box", 0.0))
 
@@ -370,6 +371,49 @@ class Pipeline:
                         sorted(units), self._placement.expected_grams)
         else:
             logger.info("Load cells not connected (stub) — layout from CV only")
+
+    def _wait_for_loadcell_data(
+        self, timeout_s: float = 30.0, poll_interval: float = 0.2, settle_samples: int = 10
+    ) -> dict:
+        """Block for the reader's first real reading before the boot tare, then
+        average a few more samples so the tare isn't riding on one noisy instant.
+
+        ``LoadCellReader`` starts its read thread and returns immediately — a
+        naive next call grabs whatever was cached right then (often still ``{}``,
+        since a fresh ESP32 boot can take several seconds of its own tare routine
+        before it ever streams a line); taring on ``{}`` sets no offsets at all,
+        so every later reading is raw/un-zeroed for the rest of the run. Beyond
+        that first-data wait, this also collects ``settle_samples`` readings
+        ``poll_interval`` apart (matching the firmware's own ~200ms line cadence)
+        and averages them per key — the same idea as the firmware's own 20-sample
+        hardware tare on EN-reset, so a good boot tare doesn't depend on the
+        operator remembering to press EN first. Only waits when load cells are
+        configured on; falls back to whatever's available (possibly still empty)
+        if the timeout elapses, same as the pre-existing not-connected fallback.
+        """
+        if not self._loadcells.is_enabled:
+            return self._loadcells.get_weights()
+        deadline = time.time() + timeout_s
+        weights = self._loadcells.get_weights()
+        while not weights and time.time() < deadline:
+            time.sleep(poll_interval)
+            weights = self._loadcells.get_weights()
+        if not weights:
+            logger.warning("No load-cell data after %.0fs — booting with an empty "
+                           "tare (readings will be un-zeroed until the next tare "
+                           "event: empty-box confirm or cycle restart)", timeout_s)
+            return weights
+
+        samples = [weights]
+        for _ in range(settle_samples - 1):
+            time.sleep(poll_interval)
+            w = self._loadcells.get_weights()
+            if w:
+                samples.append(w)
+        keys = set().union(*(s.keys() for s in samples))
+        averaged = {k: sum(s.get(k, 0.0) for s in samples) / len(samples) for k in keys}
+        logger.info("Load-cell boot tare averaged over %d sample(s)", len(samples))
+        return averaged
 
     def _target_for(self, bin_id: str) -> int:
         """Target for ``bin_id`` under the current set of the work-order cycle."""
@@ -408,15 +452,28 @@ class Pipeline:
             self._empty_box_raw = float(weights.get("kit_box", 0.0))
         logger.info("Cycle restarted -> set 1/%d", self._cycle.total_sets)
 
+    def _confirm_box_emptied(self, weights: dict) -> None:
+        """Operator confirmed (via the UI popup) that the kitting box has been
+        physically emptied: tare and unblock the next set. No automatic weight
+        check — the operator verifies by hand."""
+        if self._placement is not None:
+            self._placement.tare(weights)
+            self._empty_box_raw = float(weights.get("kit_box", 0.0))
+        self._waiting_to_empty = False
+        logger.info("Operator confirmed kitting box emptied -> next set activated and tared.")
+
     def _service_cycle_requests(self) -> None:
-        """Handle operator set-complete / cycle-restart each loop (with or
-        without load cells)."""
+        """Handle operator set-complete / cycle-restart / empty-confirmed each
+        loop (with or without load cells)."""
         if self._state.consume_complete_request():
             w = self._loadcells.get_weights() if self._loadcells is not None else {}
             self._advance_set(w)
         if self._state.consume_restart_request():
             w = self._loadcells.get_weights() if self._loadcells is not None else {}
             self._restart_cycle(w)
+        if self._state.consume_empty_confirmed_request():
+            w = self._loadcells.get_weights() if self._loadcells is not None else {}
+            self._confirm_box_emptied(w)
 
     def _apply_loadcell_counts(self) -> None:
         """Drive BOM-bin pick counts from the kitting box (placement-driven).
@@ -424,7 +481,9 @@ class Pipeline:
         A bin's count is how many of its items the box currently holds, not how
         many left the bin — the counter only moves on placement. Connected-guard:
         a dropped link leaves counts alone. When the UI requests "complete kit",
-        all receptors are re-tared so the next kit starts from zero.
+        the pipeline waits for the operator's "box emptied" confirmation (a UI
+        popup, not an automatic weight check) before re-taring all receptors and
+        starting the next set.
         """
         if self._loadcells is None or self._placement is None:
             return
@@ -432,30 +491,26 @@ class Pipeline:
             return
         weights = self._loadcells.get_weights()
 
-        # If waiting to empty, block counts and prompt operator until box is physically cleared
+        # Waiting on the operator to physically empty the box and confirm via
+        # the UI popup — counts stay blocked until then. No automatic weight check.
         if getattr(self, "_waiting_to_empty", False):
             raw_box = float(weights.get("kit_box", 0.0))
             empty_raw = getattr(self, "_empty_box_raw", 0.0)
-            if abs(raw_box - empty_raw) <= 4.0:
-                self._placement.tare(weights)
-                self._empty_box_raw = float(weights.get("kit_box", 0.0))
-                self._waiting_to_empty = False
-                logger.info("Kitting box empty detected. Next set activated and tared.")
-            else:
-                self._state.update_kit({
-                    "placed": {},
-                    "removed": {},
-                    "targets": {},
-                    "active": None,
-                    "done": [],
-                    "box_grams": round(raw_box - empty_raw, 1),
-                    "complete": False,
-                    "state": "IDLE",
-                    "overpick": {},
-                    "alert": {"type": "empty-kit-box", "message": "PLEASE EMPTY KITTING BOX TO START NEXT SET"},
-                    "box_id": self._placement.box_id,
-                })
-                return
+            self._state.update_kit({
+                "placed": {},
+                "removed": {},
+                "targets": {},
+                "active": None,
+                "done": [],
+                "box_grams": round(raw_box - empty_raw, 1),
+                "complete": False,
+                "state": "WAITING_EMPTY",
+                "overpick": {},
+                "alert": {"type": "empty-kit-box",
+                          "message": "EMPTY THE KITTING BOX, THEN CONFIRM TO START THE NEXT SET"},
+                "box_id": self._placement.box_id,
+            })
+            return
 
         kit = self._placement.update(weights)
         for bin_id, count in kit.placed.items():
