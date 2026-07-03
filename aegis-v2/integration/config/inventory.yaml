@@ -13,7 +13,7 @@ items:
   pcb_connector:            { unit_g: 128.0 }
   copper_rod:          { unit_g: 23.9 }
   te_completed_part:   { unit_g: 12.5 }
-  te_uncompleted_part: { unit_g: 3.6 }
+  te_uncompleted_part: { unit_g: 3.5 }
   m6_cross_screw:      { unit_g: 3.2 }
   shelf_bracket:       { unit_g: 5.1 }
   bin_conn_big:         { unit_g: 15.1 }
@@ -21,10 +21,10 @@ items:
 
 # Bin -> component links. bin_id = canonical grid id (AFTER bin_remap in settings.yaml).
 bins:
-  bin_0_2: te_uncompleted_part
-  bin_0_3: te_completed_part
-  bin_0_4: m6_cross_screw
-  bin_0_5: shelf_bracket
-  bin_1_0: pcb_connector
-  bin_1_1: copper_rod
-  bin_1_2: bin_conn_big
+  bin_0_3: shelf_bracket
+  bin_0_1: te_completed_part
+  bin_0_0: m6_cross_screw
+  bin_0_5: te_uncompleted_part 
+  bin_1_1: pcb_connector
+  bin_1_2: copper_rod
+  bin_1_0: bin_conn_big

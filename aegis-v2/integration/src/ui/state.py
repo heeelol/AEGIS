@@ -83,6 +83,11 @@ class PipelineState:
         self._cycle: dict = {}
         self._restart_requested: bool = False
 
+        # One-shot "operator confirmed the kitting box is physically empty" flag,
+        # raised by the UI's popup and consumed by the pipeline to tare the
+        # receptors and unblock the next set. Manual — no automatic weight check.
+        self._empty_confirmed_requested: bool = False
+
         # Sequential pick lock: the one bin currently in progress. The first pick on
         # a bin locks it (only it counts); hitting its target completes it (added to
         # `_done`) and releases the lock so any other bin can be started next.
@@ -239,6 +244,20 @@ class PipelineState:
         with self._lock:
             pending = self._restart_requested
             self._restart_requested = False
+            return pending
+
+    def request_empty_confirmed(self) -> None:
+        """UI confirms the kitting box has been physically emptied (one-shot;
+        consumed by the pipeline, which tares the receptors and unblocks the
+        next set)."""
+        with self._lock:
+            self._empty_confirmed_requested = True
+
+    def consume_empty_confirmed_request(self) -> bool:
+        """Pipeline checks/clears the empty-confirmed request. True if one was pending."""
+        with self._lock:
+            pending = self._empty_confirmed_requested
+            self._empty_confirmed_requested = False
             return pending
 
     # ── Readers (called by FastAPI endpoints) ────────────────
