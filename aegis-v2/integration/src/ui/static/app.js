@@ -57,6 +57,7 @@ async function poll() {
     renderBins(bins, layout, detectedById, kit);
     renderStatus(bins, kit);
     renderAlert(kit);
+    renderEmptyBoxModal(kit);
 
     document.getElementById("last-updated").textContent =
       "Updated " + new Date().toLocaleTimeString();
@@ -209,7 +210,8 @@ function renderStatus(bins, kit) {
   if (!inJob.length) {
     message = "Waiting for calibration…"; mode = "";
   } else if (kit && kit.alert) {
-    message = kit.alert.message; mode = "action";          // also shown full-screen
+    // empty-kit-box also opens the popup (renderEmptyBoxModal); others also show full-screen (renderAlert).
+    message = kit.alert.message; mode = "action";
   } else if (complete) {
     message = "ALL BINS COMPLETE — READY TO CLOSE"; mode = "ready";
   } else if (active) {
@@ -227,19 +229,30 @@ function renderStatus(bins, kit) {
 }
 
 // ── Full-screen red fault overlay ───────────────────
-// Shown for the four hard-fault events (currently load-cell-detectable:
-// overpack-kit). pick/return-wrong-bin + remove-from-kit hook in here too once
-// the backend emits them as kit.alert.
+// Shown for hard-fault events (currently load-cell-detectable: overpack-kit).
+// pick/return-wrong-bin + remove-from-kit hook in here too once the backend
+// emits them as kit.alert. "empty-kit-box" is routed to a popup instead (see
+// renderEmptyBoxModal) — it's a normal between-sets step, not a fault.
 function renderAlert(kit) {
   const overlay = document.getElementById("alert-overlay");
   if (!overlay) return;
   const alert = kit && kit.alert;
-  if (alert && alert.message) {
+  if (alert && alert.message && alert.type !== "empty-kit-box") {
     document.getElementById("alert-msg").textContent = alert.message;
     overlay.classList.remove("hidden");
   } else {
     overlay.classList.add("hidden");
   }
+}
+
+// ── Empty-kitting-box popup ─────────────────────────
+// Between sets, the pipeline blocks counts until the operator confirms (by
+// button, not an automatic weight check) that the box has been emptied.
+function renderEmptyBoxModal(kit) {
+  const modal = document.getElementById("empty-box-modal");
+  if (!modal) return;
+  const alert = kit && kit.alert;
+  modal.classList.toggle("hidden", !(alert && alert.type === "empty-kit-box"));
 }
 
 // ── Confirm-kit flow (wired once) ───────────────────
@@ -250,7 +263,8 @@ function initCompleteFlow() {
   document.getElementById("confirm-cancel").addEventListener("click",
     () => modal.classList.add("hidden"));
   document.getElementById("confirm-proceed").addEventListener("click", async () => {
-    // Close the kit: the backend re-tares all 3 receptors for the next run.
+    // Close the set: the backend blocks counts (empty-kitting-box popup) until
+    // the operator confirms it's been emptied, then re-tares for the next set.
     try {
       await fetch("/api/kit/complete", { method: "POST" });
     } catch (err) { console.error("Complete error:", err); }
@@ -259,7 +273,21 @@ function initCompleteFlow() {
   });
 }
 
+// ── Confirm-empty flow (wired once) ─────────────────
+function initEmptyBoxFlow() {
+  const btn = document.getElementById("empty-box-confirm");
+  btn.addEventListener("click", async () => {
+    // Manual confirmation only — no automatic weight check. The pipeline tares
+    // all receptors and unblocks the next set.
+    try {
+      await fetch("/api/kit/confirm-empty", { method: "POST" });
+    } catch (err) { console.error("Confirm-empty error:", err); }
+    poll();
+  });
+}
+
 // ── Start ───────────────────────────────────────────
 initCompleteFlow();
+initEmptyBoxFlow();
 poll();
 setInterval(poll, POLL_INTERVAL);

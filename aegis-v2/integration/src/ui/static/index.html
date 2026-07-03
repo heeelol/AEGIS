@@ -60,6 +60,18 @@
     </div>
   </div>
 
+  <!-- Empty-kitting-box confirmation: shown between sets instead of a full-screen
+       alert. Operator empties the box by hand and confirms — no automatic weight check. -->
+  <div id="empty-box-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">Empty the kitting box</div>
+      <div class="modal-body">Remove all items from the kitting box, then confirm to start the next set.</div>
+      <div class="modal-actions">
+        <button id="empty-box-confirm" class="modal-btn proceed">Confirm — start next set</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
