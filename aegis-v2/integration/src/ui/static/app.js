@@ -122,7 +122,11 @@ function makeBinTile(binId, b, detected, kit) {
 
   const ui = binUiState(b, detected, kit);   // available | active | locked | done | not_in_bom
   // Hand-in-bin glow (in the bin's own colour) — clearer for the demo.
-  box.className = "bin " + ui + (b.is_active ? " hand-in" : "");
+  // Fault highlight: the specific bin named by an active fault glows directly,
+  // so the operator doesn't have to match a bin ID in a sentence to a physical
+  // tile (paired with the banner's #alert-bin badge — see style.css .bin.fault).
+  const isFaultBin = kit && kit.alert && kit.alert.bin === binId;
+  box.className = "bin " + ui + (b.is_active ? " hand-in" : "") + (isFaultBin ? " fault" : "");
 
   // Wrong-bin cross: the hand is in a bin the operator must NOT pick from right now —
   // not part of the job (not_in_bom), soft-locked while another bin is active, or already
@@ -229,19 +233,32 @@ function renderStatus(bins, kit) {
 }
 
 // ── Full-screen red fault overlay ───────────────────
-// Shown for hard-fault events (currently load-cell-detectable: overpack-kit).
-// pick/return-wrong-bin + remove-from-kit hook in here too once the backend
-// emits them as kit.alert. "empty-kit-box" is routed to a popup instead (see
+// Shown for hard-fault events (overpack-kit, pick-from-wrong-bin,
+// return-to-wrong-bin — all auto-clear once the backend's kit.alert goes
+// back to null). "empty-kit-box" is routed to a popup instead (see
 // renderEmptyBoxModal) — it's a normal between-sets step, not a fault.
 function renderAlert(kit) {
   const overlay = document.getElementById("alert-overlay");
   if (!overlay) return;
   const alert = kit && kit.alert;
+  const binEl = document.getElementById("alert-bin");
   if (alert && alert.message && alert.type !== "empty-kit-box") {
     document.getElementById("alert-msg").textContent = alert.message;
+    // The message already names the bin in a sentence; this badge repeats it
+    // as a large, separate, at-a-glance target so the operator doesn't have
+    // to parse a full sentence to find which physical bin to act on.
+    if (binEl) {
+      if (alert.bin) {
+        binEl.textContent = alert.bin;
+        binEl.classList.remove("hidden");
+      } else {
+        binEl.classList.add("hidden");
+      }
+    }
     overlay.classList.remove("hidden");
   } else {
     overlay.classList.add("hidden");
+    if (binEl) binEl.classList.add("hidden");
   }
 }
 

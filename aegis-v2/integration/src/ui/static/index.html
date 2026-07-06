@@ -39,12 +39,13 @@
 
   </div>
 
-  <!-- Full-screen red fault overlay: overpack-kit (+ wrong-pick / wrong-return /
-       remove-from-kit once the backend emits them) -->
+  <!-- Full-screen red fault overlay: overpack-kit, pick-from-wrong-bin,
+       return-to-wrong-bin -->
   <div id="alert-overlay" class="alert-overlay hidden">
     <div class="alert-box">
       <div class="alert-icon">⚠</div>
       <div id="alert-msg" class="alert-text"></div>
+      <div id="alert-bin" class="alert-bin hidden"></div>
     </div>
   </div>
 
