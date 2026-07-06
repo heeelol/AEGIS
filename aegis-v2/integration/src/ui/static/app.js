@@ -237,11 +237,20 @@ function renderStatus(bins, kit) {
 // return-to-wrong-bin — all auto-clear once the backend's kit.alert goes
 // back to null). "empty-kit-box" is routed to a popup instead (see
 // renderEmptyBoxModal) — it's a normal between-sets step, not a fault.
+// Minimum time the banner stays visible once shown. A fault that clears
+// within a single poll cycle (e.g. pick-from-wrong-bin, often corrected by
+// the operator almost instantly) would otherwise flash for ~1 poll interval
+// -- too fast to actually notice, even though it was genuinely detected (the
+// bin tile / status bar, simpler non-animated updates, still catch it).
+const ALERT_MIN_VISIBLE_MS = 900;
+let alertHideAt = 0;
+
 function renderAlert(kit) {
   const overlay = document.getElementById("alert-overlay");
   if (!overlay) return;
   const alert = kit && kit.alert;
   const binEl = document.getElementById("alert-bin");
+  const now = Date.now();
   if (alert && alert.message && alert.type !== "empty-kit-box") {
     document.getElementById("alert-msg").textContent = alert.message;
     // The message already names the bin in a sentence; this badge repeats it
@@ -256,7 +265,8 @@ function renderAlert(kit) {
       }
     }
     overlay.classList.remove("hidden");
-  } else {
+    alertHideAt = now + ALERT_MIN_VISIBLE_MS;
+  } else if (now >= alertHideAt) {
     overlay.classList.add("hidden");
     if (binEl) binEl.classList.add("hidden");
   }

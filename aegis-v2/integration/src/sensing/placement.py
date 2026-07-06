@@ -26,25 +26,38 @@ Model
 * Wrong-bin detection knows what's actually in the operator's hand instead of
   reacting to any weight blip on another bin:
   - A bin is only even considered once its OWN reading reaches steady state
-    (``abs(raw − smoothed) <= count_tolerance_g``) — the same "has the EMA
-    caught up" test already used for the box baseline, just applied per-bin.
-    A bin still moving from a bump/press or mechanical cross-talk (a real
-    removal on one bin flexing a shared shelf enough for a neighbor's cell to
-    blip) is invisible to the check until it settles; transient cross-talk
-    that decays back out is never seen "elevated" at all.
+    (``abs(raw − smoothed) <= count_h(bin) * unit_weight(bin)``) — the same
+    "has the EMA caught up" test already used for the box baseline, just
+    applied per-bin, and scaled to that bin's own item weight (the same
+    relative precision already accepted for counting) rather than a flat gram
+    value — a flat tolerance makes heavier items take much longer, in
+    absolute time, to converge tightly enough to even be considered, so a
+    mistake corrected quickly would never get a chance to fault. A bin still
+    moving from a bump/press or mechanical cross-talk (a real removal on one
+    bin flexing a shared shelf enough for a neighbor's cell to blip) is
+    invisible to the check until it settles; transient cross-talk that decays
+    back out is never seen "elevated" at all. Latched with a wide (3x)
+    dead-band between entering vs. leaving settled — a single memoryless
+    threshold test flickers true/false every frame under ordinary sensor
+    noise once that noise approaches the tolerance, which flashed the alert
+    itself on and off.
   - Since only one bin is active at a time, "what's in hand" is always a
     specific, known item — the active bin's, whenever ``holding =
-    removed[active] − placed[active] > 0``. A weight increase on some OTHER,
-    not-yet-done bin only counts as a genuine return-to-wrong-bin if it
-    settles to roughly ONE UNIT OF THE ACTIVE BIN'S ITEM (not that bin's own
-    item weight) — a stray blip elsewhere almost never coincidentally matches
-    an unrelated item's specific mass. While nothing is actually in hand
-    (``holding == 0``), there's nothing to misplace, so this check doesn't
-    fire on other bins at all — including while the station is fully idle.
-  - ``pick-from-wrong-bin`` (an unexpected removal from a non-active bin) and
-    the done-bin branch keep their existing own-unit-based logic; they gain
-    only the steady-state gate, since there's no "held item" to match against
-    a bin gaining a NEW removal.
+    removed[active] − placed[active] > 0``. A weight increase on some OTHER
+    bin (done or not) only counts as a genuine return-to-wrong-bin if it
+    settles to roughly ONE UNIT OF THE ACTIVE BIN'S ITEM — never that other
+    bin's own item weight. A stray blip elsewhere almost never coincidentally
+    matches an unrelated item's specific mass, and matching against the OTHER
+    bin's own weight would miss real mistakes: a light held item wrongly
+    dropped into an already-done HEAVY-item bin would never reach even one
+    unit of that bin's own (much heavier) weight, so it would never register
+    if checked that way. While nothing is actually in hand (``holding == 0``),
+    there's nothing to misplace, so this check doesn't fire on other bins at
+    all — including while the station is fully idle.
+  - ``pick-from-wrong-bin`` (an unexpected removal from a non-active bin) is
+    unchanged — measured against that bin's own item weight, since a pick
+    creates new in-hand content rather than needing to match existing content.
+    It only gains the steady-state gate.
 
 All weights are EMA-smoothed; integer counts use a hysteresis deadband, floored
 in absolute grams (``count_tolerance_g``) so light items keep a real margin
@@ -130,7 +143,6 @@ class PlacementTracker:
         self._active: Optional[str] = None
         self._done: set[str] = set()
         self._removed = {b: 0 for b in self._units}
-        self._added = {b: 0 for b in self._units}
         self._placed = {b: 0 for b in self._units}
         self._activation_candidate = None
         self._activation_candidate_since = 0.0
@@ -140,6 +152,11 @@ class PlacementTracker:
         # active bin changes, since the unit being matched against changes too).
         self._return_match = {b: 0 for b in self._units}
         self._return_match_active: Optional[str] = None
+        # Latched per-bin steady-state flag (Schmitt-trigger style, same idiom
+        # as _hysteretic()'s dead-band elsewhere in this file): starts
+        # "unsettled" until proven otherwise, and once settled won't flip back
+        # from a single noisy frame — see the steady-state comment in update().
+        self._settled_state = {b: False for b in self._units}
 
     @property
     def box_id(self):
@@ -199,24 +216,43 @@ class PlacementTracker:
     def _raw_removed(self, sm, b):
         return max(0.0, -sm.get(b, 0.0)) / self._units[b]
 
-    def _raw_added(self, sm, b):
-        return max(0.0, sm.get(b, 0.0)) / self._units[b]
-
     def update(self, weights):
         sm = self._smooth(weights)
 
-        # 1) per-bin removal / addition (own cell, debounced)
+        # 1) per-bin removal (own cell, debounced)
         for b in self._units:
             self._removed[b] = self._hysteretic(self._raw_removed(sm, b), self._removed[b], self._count_h(b))
-            self._added[b] = self._hysteretic(self._raw_added(sm, b), self._added[b], self._count_h(b))
 
         # Per-bin steady-state: has this bin's own EMA actually caught up to its
         # raw reading yet? A bin mid-bump/press, or riding out mechanical
         # cross-talk from a neighbor, is still visibly diverging here — the
         # wrong-bin checks below skip it entirely until it settles (see module
-        # docstring).
+        # docstring). Latched with a wide dead-band (Schmitt-trigger style, like
+        # _hysteretic() elsewhere): a single memoryless threshold test flickers
+        # true/false every frame under ordinary sensor noise once that noise is
+        # comparable to the tolerance, which made the alert itself flash on/off.
+        # Entering settled still requires a genuinely small gap; LEAVING settled
+        # requires the gap to grow well past it (3x), so borderline noise can't
+        # flip the decision every frame in either direction.
+        #
+        # Tolerance is scaled per-bin (count_h(b) as a fraction of that bin's OWN
+        # unit weight, same relative precision already accepted for counting)
+        # rather than a flat count_tolerance_g. A flat gram value makes heavier
+        # items take much longer, in absolute time, to converge tightly enough to
+        # even be considered -- up to ~2s+ for a 100g+ item at ema_alpha=0.4 -- so
+        # a mistake corrected faster than that would never get a chance to fault.
         raw_bin = {b: self._adj(weights, b) for b in self._units}
-        settled = {b: abs(raw_bin[b] - sm.get(b, 0.0)) <= self._count_floor for b in self._units}
+        settled = {}
+        for b in self._units:
+            tol = self._count_h(b) * self._units[b]
+            gap = abs(raw_bin[b] - sm.get(b, 0.0))
+            if self._settled_state[b]:
+                if gap > tol * 3:
+                    self._settled_state[b] = False
+            else:
+                if gap <= tol:
+                    self._settled_state[b] = True
+            settled[b] = self._settled_state[b]
 
         raw_box = max(0.0, self._adj(weights, self._box_id))    # unsmoothed, tared
         box = max(0.0, self._adj(sm, self._box_id))              # smoothed, tared
@@ -295,22 +331,37 @@ class PlacementTracker:
                     continue
                 expected = self._targets[b] if b in self._done else 0
                 r = self._removed[b]
-                added = self._added[b] >= 1
+
+                # Did a settled increase here match roughly one unit of the
+                # ACTIVE bin's item weight (not b's own)? Same check for a
+                # done or not-yet-done bin -- either way, the only thing that
+                # could legitimately be landing on b right now is what's
+                # actually in hand, so that's what has to match, not b's own
+                # nominal item weight (a light held item would otherwise never
+                # cross a much heavier done bin's own threshold). The increase
+                # is measured against b's own EXPECTED resting point
+                # (-expected*unit, zero for a not-yet-done bin), not against
+                # the original zero tare -- a done bin already sits well below
+                # zero (its own item fully removed), so comparing to zero would
+                # never see a foreign item landing there as an "increase" at
+                # all unless it happened to outweigh everything already taken.
+                returned = False
+                expected_baseline = -expected * self._units[b]
+                deviation = sm.get(b, 0.0) - expected_baseline
+                if active is not None and holding > 0 and deviation > 0:
+                    raw_match = deviation / self._units[active]
+                    self._return_match[b] = self._hysteretic(
+                        raw_match, self._return_match[b], self._count_h(active))
+                    returned = self._return_match[b] >= 1
+
                 if b in self._done:
-                    if r < expected or added:
+                    if returned:
                         fault = fault or self._fault("return-to-wrong-bin", b)
                     elif r > expected:
                         fault = fault or self._fault("pick-from-wrong-bin", b)
                 else:  # available/locked, expected empty change
-                    if active is not None and holding > 0 and sm.get(b, 0.0) > 0:
-                        # Match against the ACTIVE bin's unit weight, not b's own --
-                        # only a settled increase of roughly one unit of what's
-                        # actually in hand counts as a genuine return here.
-                        raw_match = sm[b] / self._units[active]
-                        self._return_match[b] = self._hysteretic(
-                            raw_match, self._return_match[b], self._count_h(active))
-                        if self._return_match[b] >= 1:
-                            fault = fault or self._fault("return-to-wrong-bin", b)
+                    if returned:
+                        fault = fault or self._fault("return-to-wrong-bin", b)
                     elif r >= 1:
                         # In IDLE this bin would have been activated above; if we are
                         # PICKING another bin, a drop here is a wrong-bin pick.
