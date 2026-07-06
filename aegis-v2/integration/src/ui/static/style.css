@@ -338,23 +338,56 @@ h2 {
   * { animation: none !important; transition: none !important; }
 }
 
-/* ── Full-screen red fault overlay (overpack & co.) ─── */
+/* ── Fault banner (overpack & co.) ────────────────────
+   A slim top banner, NOT a full-screen overlay — the bin grid must stay
+   visible underneath so the operator can actually see the bin the fault
+   (and the highlighted tile below) is pointing at. */
 .alert-overlay {
-  position: fixed; inset: 0; z-index: 1000;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(255, 59, 48, 0.92);
+  padding: 14px 28px;
+  background: rgba(255, 59, 48, 0.94);
+  box-shadow: 0 6px 26px -6px rgba(0, 0, 0, 0.55);
   animation: alert-pulse 0.7s ease-in-out infinite alternate;
 }
 .alert-overlay.hidden { display: none; }
-.alert-box { text-align: center; color: #fff; padding: 48px; }
-.alert-icon { font-size: 84px; line-height: 1; }
-.alert-text {
-  font-family: var(--mono); font-weight: 700; font-size: 30px;
-  letter-spacing: 2px; margin-top: 22px; text-transform: uppercase;
+.alert-box {
+  display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 18px; color: #fff;
 }
+.alert-icon { font-size: 34px; line-height: 1; }
+.alert-text {
+  font-family: var(--mono); font-weight: 700; font-size: 17px;
+  letter-spacing: 1px; text-transform: uppercase;
+}
+/* Separate badge for the specific bin to act on — a glanceable target
+   distinct from the message sentence, not something the operator has to read
+   a full sentence to find. Paired with .bin.fault highlighting the actual
+   tile on the grid below. */
+.alert-bin {
+  display: inline-block; padding: 6px 18px;
+  font-family: var(--mono); font-weight: 800; font-size: 22px;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: #fff; background: rgba(0, 0, 0, 0.28);
+  border: 2px solid #fff; border-radius: 8px;
+}
+.alert-bin.hidden { display: none; }
 @keyframes alert-pulse {
   from { background: rgba(255, 59, 48, 0.82); }
   to   { background: rgba(190, 18, 12, 0.96); }
+}
+
+/* ── Fault-bin highlight on the grid itself ───────────
+   The tile named by the active fault glows directly — no reading/hunting
+   required to match a bin ID in a sentence to a physical bin. */
+.bin.fault {
+  border-color: var(--alert);
+  box-shadow: 0 0 0 4px var(--alert), 0 0 22px rgba(255, 59, 48, 0.75);
+  animation: bin-fault-pulse 0.7s ease-in-out infinite alternate;
+}
+@keyframes bin-fault-pulse {
+  from { box-shadow: 0 0 0 4px var(--alert), 0 0 12px rgba(255, 59, 48, 0.45); }
+  to   { box-shadow: 0 0 0 4px var(--alert), 0 0 30px rgba(255, 59, 48, 0.9); }
 }
 
 /* ── Per-bin "return N" indicator (overpick) ────────── */

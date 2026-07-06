@@ -352,10 +352,11 @@ class Pipeline:
             hysteresis=box_cfg.get("hysteresis", 0.25),
             box_tolerance_g=box_cfg.get("box_tolerance_g"),
             box_step_tolerance_g=box_cfg.get("box_step_tolerance_g"),
-            box_step_fraction=box_cfg.get("box_step_fraction", 0.15),
             activation_frac=box_cfg.get("activation_frac", 0.5),
             wrong_bin_frac=box_cfg.get("wrong_bin_frac", 0.5),
             count_tolerance_g=box_cfg.get("count_tolerance_g"),
+            fault_settle_s=box_cfg.get("fault_settle_s", 2.5),
+            activation_confirm_s=box_cfg.get("activation_confirm_s", 0.4),
         )
         boot_weights = self._wait_for_loadcell_data()
         self._placement.tare(boot_weights)  # software zero at boot

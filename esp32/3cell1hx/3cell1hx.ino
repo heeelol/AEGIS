@@ -34,9 +34,9 @@ const int J5 = 21;
 const int J6 = 22;
 const int J7 = 23;
 const int J8 = 25;
-const int J9 = 26; //NOT IN USE, TODO: SOLDER IT
+const int J9 = 26; // bin_9 -- wired
 const int J10 = 27; //NOT IN USE
-const int J11 = 32;
+const int J11 = 32; // bin_6 -- wired
 const int J12 = 33;
 
 // ------- LOADCELL CONST -------
@@ -45,10 +45,10 @@ const float CELL2 = 68.1992;
 const float CELL3 = 71.6398;
 const float CELL4 = 143.7663;
 const float CELL5 = 141.6425;
-const float CELL6 = 1;
+const float CELL6 = 0.0160; // uncalibrated -- run calibrate() and paste the real scale here
 const float CELL7 = 1009.8922; //TODO FIX MECH SIDE THEN RECALIB
 const float CELL8 = 1056.6241; //TODO FIX MECH SIDE THEN RECALIB
-const float CELL9 = 1; // NOT IN USE, PENDING PORT 9
+const float CELL9 = 0.0680; // uncalibrated -- run calibrate() and paste the real scale here
 const float CELL10 = 140.5147;
 
 struct Bin {
@@ -60,9 +60,9 @@ struct Bin {
 // TODO: fill in dout pins, and the scale values from calibrate().
 // Until calibrated, scale=1 just gives raw-ish numbers.
 //
-const int NUM_BINS = 8;          // number of bins (each = one HX711)
+const int NUM_BINS = 10;          // number of bins (each = one HX711)
 Bin bins[NUM_BINS] = {
-  // id          dout    scale 
+  // id          dout    scale
   { "bin_1",  J4, CELL1 },
   { "bin_2",  J3, CELL2 },
   { "bin_3", J1, CELL3 },
@@ -71,15 +71,16 @@ Bin bins[NUM_BINS] = {
   { "bin_7",  J5, CELL7 },
   { "bin_8", J7, CELL8 },
   { "bin_10", J12, CELL10 },
-  // { "bin_1_1", J10, CELL, 0 }, //TODO solder the jst for this
-  // { "bin_6", J11, CELL6 },
+  { "bin_6", J11, CELL6 },   // newly wired -- scale=1 (uncalibrated), run calibrate()
+  { "bin_9", J9, CELL9 },    // newly wired -- scale=1 (uncalibrated), run calibrate()
 };
+
 
 HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
 const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 612.0;  // known reference mass, grams
+const float CAL_MASS_G     = 250.0;  // known reference mass, grams
 
 // ---------- FILTER ----------
 const int N_SAMPLES = 1;    // readings averaged per bin per cycle

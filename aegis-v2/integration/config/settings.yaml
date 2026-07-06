@@ -134,32 +134,34 @@ work_order:
   #   - bin_0_4: 8
   #     bin_1_0: 2
 
-  # sets:
-  #   - bin_1_0: 3
-  #     bin_0_3: 2
-  #   - bin_0_0: 2
-  #     bin_0_3: 1
-  #     bin_1_2: 1
-  #   - bin_0_1: 2
-  #     bin_0_3: 1
-  #     bin_1_2: 1
-  #   - bin_0_5: 4
-  #     bin_1_1: 2
-  #     bin_0_5: 6
-  #   - bin_0_3: 2
-  #     bin_1_0: 1
-  #   - bin_1_1: 4
-  #     bin_0_0: 3
+  sets:
+    - bin_1_0: 3
+      bin_0_3: 2
+    - bin_0_0: 2
+      bin_0_3: 1
+      bin_1_2: 1
+    - bin_0_1: 2
+      bin_0_3: 1
+      bin_1_2: 1
+    - bin_0_5: 4
+      bin_1_1: 2
+      bin_0_5: 6
+    - bin_0_3: 2
+      bin_1_0: 1
+    - bin_1_1: 4
+      bin_0_0: 3
 
 # TEST SET
-  sets:
-    - bin_0_0: 1
-      bin_0_1: 1
-      bin_0_3: 1
-      bin_0_5: 1
-      bin_1_0: 1
-      bin_1_1: 1
-      bin_1_2: 1
+  # sets:
+  #   - bin_0_0: 1
+  #     bin_0_1: 1
+  #     bin_0_2: 1
+  #     bin_0_3: 1
+  #     bin_0_4: 1
+  #     bin_0_5: 1
+  #     bin_1_0: 1
+  #     bin_1_1: 1
+  #     bin_1_2: 1
   
 
 
@@ -194,11 +196,9 @@ sensing:
       bin_7:  bin_0_0
       bin_8:  bin_0_1    # BOM bin
       bin_10: kit_box    # kitting box
-      bin_4:  bin_0_5    # BOM bin — ASSUMED: you said bin_0_5 → bin_9, but bin_9 was
-                         #   already mapped to bin_0_0 AND is inactive in firmware.
-                         #   bin_4 is the only unmapped ACTIVE cell; confirm or change.
-      bin_6:  bin_0_4    # NOTE: bin_6 is commented-out in firmware → no weight until enabled
-      bin_9:  bin_0_2    # NOTE: bin_9 is commented-out (CELL9=1) → no weight until enabled
+      bin_4:  bin_0_5    # BOM bin
+      bin_6:  bin_0_4    # BOM bin — newly wired; scale=1 (uncalibrated) until calibrate() is run
+      bin_9:  bin_0_2    # newly wired; scale=1 (uncalibrated) until calibrate() is run
     # Kitting box = the 4th load receptor (separate 5 kg cell, off-camera).
     # SEQUENTIAL single-bin FSM: one bin is active at a time, so the box's weight
     # change can only come from that item type (no cross-bin ambiguity). The active
@@ -207,18 +207,36 @@ sensing:
     kit_box:
       box_id: kit_box
       activation_frac: 0.5        # a bin goes ACTIVE once it drops ≥ this fraction of an item
-      wrong_bin_frac: 0.5         # a non-active bin changing ≥ this fraction → wrong-bin fault
-      box_step_tolerance_g: 1.8   # box step may fall this short of a unit and still count
-      box_step_fraction: 0.15     # + this fraction of the unit (big items get more slack)
+      wrong_bin_frac: 0.5         # (currently unused — superseded by the hysteretic
+                                  #  per-bin added/removed counts driving the wrong-bin faults)
+      box_step_tolerance_g: 1.8   # noise floor (grams) for the box-baseline stability gate:
+                                  # while idle, the tracked baseline only re-anchors to the
+                                  # smoothed box reading once it's settled within this of the
+                                  # raw reading (see placement.py's continuous-tracking comment)
       ema_alpha: 0.4              # weight smoothing: higher = snappier, lower = smoother
       hysteresis: 0.05            # anti-flicker deadband (fraction of an item)
       # count_tolerance_g: 0.3    # absolute-gram floor for pick/place count rounding
       #   (removed/added/placed). hysteresis alone is a % of unit weight, which
       #   shrinks to near-nothing for light items (e.g. TE parts, 0.05*3.6g=0.18g) —
-      #   below real scale noise/item-weight variance. Deliberately NOT tied to
-      #   box_step_tolerance_g (1.8g) — that's sized for the box's coarser
-      #   remove-from-kit check and is too large for small per-item counting.
+      #   below real scale noise/item-weight variance. Deliberately independent of
+      #   box_step_tolerance_g above (a different, box-level concern).
       #   Uncomment to tune; defaults to 0.3g if left unset.
+      fault_settle_s: 2.5         # grace period after every tare (boot, empty-box confirm,
+                                  # cycle restart) before wrong-bin/overpack faults can fire —
+                                  # gives per-bin readings a moment to settle from a fresh
+                                  # zero so residual convergence doesn't read as a real event
+      activation_confirm_s: 0.4   # a bin only becomes ACTIVE once it's been the leading
+                                  # candidate continuously for this long — a single noisy
+                                  # frame crossing activation_frac used to focus a bin
+                                  # instantly with zero real hand interaction. Restarts if
+                                  # the candidate changes or drops back below threshold; a
+                                  # real reach clears it easily, so this isn't a delay on
+                                  # legitimate picks
+                                  # Wrong-bin detection itself now filters cross-talk
+                                  # directly (per-bin steady-state + matching against
+                                  # what's actually in-hand, see placement.py) instead of
+                                  # a generic time-based debounce — fault_confirm_s has
+                                  # been retired.
 
 # --- OpenCV Camera Overlay -----------------------
 ui:

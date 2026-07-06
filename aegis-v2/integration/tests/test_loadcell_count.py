@@ -62,7 +62,11 @@ def _pipeline_with(state, reader, tracker):
     
     units = tracker.units()
     targets = {b: 5 for b in units}
-    p._placement = PlacementTracker(units, targets, "kit_box", ema_alpha=1.0)
+    # activation_confirm_s=0: this test exercises a single _apply_loadcell_counts()
+    # call, not a real-time loop — the default confirm window would never have
+    # elapsed within one call, so the bin would never activate.
+    p._placement = PlacementTracker(units, targets, "kit_box", ema_alpha=1.0,
+                                     activation_confirm_s=0)
     p._placement.tare({k: 0.0 for k in units} | {"kit_box": 0.0})
     return p
 
