@@ -135,6 +135,24 @@ def test_return_to_wrong_bin_triggers_fault_and_clears():
     assert s.alert is None and s.state == "PICKING"
 
 
+def test_return_to_wrong_done_bin_fires_even_for_a_much_lighter_held_item():
+    # Regression: bin_1_2 (67.1g item) completes first. Later, bin_0_4's much
+    # lighter item (3.6g) is held and wrongly returned to the now-DONE
+    # bin_1_2. Since bin_1_2's own resting point (post-completion) is well
+    # below its original zero tare, a naive "is the reading above zero"
+    # check would never see the light item's small increase as anything --
+    # it must be measured against bin_1_2's own EXPECTED (already-emptied)
+    # resting point instead.
+    t = tracker()
+    settle(t, w(b12=-3 * 67.1))                     # bin_1_2 active, target 3
+    s = settle(t, w(b12=-3 * 67.1, box=3 * 67.1))   # bin_1_2 completes
+    assert s.done == ["bin_1_2"]
+    settle(t, w(b12=-3 * 67.1, b04=-3.6, box=3 * 67.1))          # bin_0_4 active, holding
+    s = settle(t, w(b12=-3 * 67.1 + 3.6, b04=-3.6, box=3 * 67.1))  # wrongly returned to done bin_1_2
+    assert s.alert is not None and s.alert["type"] == "return-to-wrong-bin"
+    assert s.alert["bin"] == "bin_1_2"
+
+
 def test_no_fault_while_idle_since_nothing_is_in_hand():
     # With nothing active, "holding" is always 0 -- there's no known item to
     # misplace, so a weight change on an available bin is never flagged (an
@@ -168,6 +186,28 @@ def test_steady_state_gate_blocks_fault_while_bin_still_fluctuating():
     for i in range(20):
         s = t.update(w(b04=-3.6, b05=(20.0 if i % 2 == 0 else -20.0)))
     assert s.alert is None
+
+
+def test_steady_state_does_not_flap_under_small_ongoing_noise():
+    # Regression: real sensor noise near the steady-state tolerance used to
+    # make the settled flag flip every frame, flashing the alert on and off
+    # (see the 3x hysteresis dead-band in update()). Alternating a small
+    # in-tolerance-then-just-over-tolerance reading on bin_0_5 must not toggle
+    # the alert once it's genuinely settled at a value matching the held item.
+    t = tracker()
+    settle(t, w(b04=-3.6))    # bin_0_4 active, holding=1
+    s = settle(t, w(b04=-3.6, b05=+3.6))    # bin_0_5 settles at a matching return
+    assert s.alert is not None
+    flips = 0
+    prev = s.alert is not None
+    for i in range(20):
+        jitter = 0.35 if i % 2 == 0 else -0.35   # straddles the raw tolerance, not the 3x exit band
+        s = t.update(w(b04=-3.6, b05=3.6 + jitter))
+        now = s.alert is not None
+        if now != prev:
+            flips += 1
+        prev = now
+    assert flips == 0 and s.alert is not None
 
 
 def test_settled_return_matching_held_item_weight_still_flags():
