@@ -18,6 +18,10 @@ Model
 * Active bin count: ``placed = round((box − baseline_box) / unit_active)``.
   On completion (``placed == removed == target``) the box weight is banked into
   ``baseline_box`` and the bin is frozen — completed counters never fluctuate.
+  This rounding uses ``box_hysteresis`` (defaults to ``hysteresis``) rather
+  than the bin-level fraction — the kit box is a physically different, coarser
+  load cell than the individual bin cells, so its own noise floor need not
+  match theirs; tune independently if light items credit unreliably.
 * ``removed[bin]`` from each bin's own cell.
 * Three red faults (auto-clear when corrected): overpack-kit, pick-from-wrong-bin,
   return-to-wrong-bin. Operators never take items back out of the kit box once
@@ -40,7 +44,10 @@ Model
     dead-band between entering vs. leaving settled — a single memoryless
     threshold test flickers true/false every frame under ordinary sensor
     noise once that noise approaches the tolerance, which flashed the alert
-    itself on and off.
+    itself on and off. Other bins are also skipped entirely while the ACTIVE
+    bin itself hasn't settled — genuine, ongoing physical activity there (a
+    real pick or place in progress) is the most likely source of mechanical
+    vibration bleeding into a neighbor's cell.
   - Since only one bin is active at a time, "what's in hand" is always a
     specific, known item — the active bin's, whenever ``holding =
     removed[active] − placed[active] > 0``. A weight increase on some OTHER
@@ -94,6 +101,7 @@ class PlacementTracker:
         tolerance_g: float | None = None,
         ema_alpha: float = 0.4,
         hysteresis: float = 0.25,
+        box_hysteresis: float | None = None,
         box_tolerance_g: float | None = None,
         box_step_tolerance_g: float | None = None,
         activation_frac: float = 0.5,
@@ -107,6 +115,16 @@ class PlacementTracker:
         self._box_id = box_id
         self._alpha = float(ema_alpha)
         self._h = float(hysteresis)
+        # Box-crediting (placed) uses a SEPARATE hysteresis fraction from
+        # bin-level removed/added counting, defaulting to the same value (no
+        # behavior change). The kit box is a physically different, coarser
+        # (higher-capacity) load cell than the individual bin cells, so its own
+        # noise floor in grams need not match theirs -- if light items register
+        # unreliably in the box specifically while their own bin's removed
+        # count is accurate, this is the knob to tune independently (lower it
+        # for more sensitivity) rather than changing `hysteresis`, which would
+        # also affect the bin cells' own, already-reliable counting.
+        self._box_h = float(box_hysteresis) if box_hysteresis is not None else self._h
         smallest = min(self._units.values(), default=1.0)
         self._step_floor = (float(box_step_tolerance_g) if box_step_tolerance_g is not None
                             else 0.5 * smallest)
@@ -170,6 +188,11 @@ class PlacementTracker:
         """Hysteresis for item-count rounding, in units of one item — floored in
         absolute grams so tiny items keep a real margin (see __init__ comment)."""
         return max(self._h, self._count_floor / self._units[b])
+
+    def _box_count_h(self, b):
+        """Hysteresis for box-crediting (placed), in units of one item — see
+        box_hysteresis in __init__ for why this is separate from _count_h."""
+        return max(self._box_h, self._count_floor / self._units[b])
 
     def tare(self, weights):
         self._offsets = {k: float(v) for k, v in weights.items()}
@@ -323,9 +346,14 @@ class PlacementTracker:
 
         # 3) wrong-bin faults: any non-active bin deviating from its expected state.
         # Suppressed during the post-tare settle window (see tare()) so a bin
-        # still catching up from a fresh zero can't spuriously fault, and per-bin
-        # until that bin reaches steady state (see module docstring).
-        if time.time() >= self._settle_until:
+        # still catching up from a fresh zero can't spuriously fault, per-bin
+        # until that bin reaches steady state (see module docstring), and
+        # entirely while the ACTIVE bin itself hasn't settled -- genuine, ongoing
+        # physical activity there (a real pick or place in progress) is the most
+        # likely source of mechanical vibration bleeding into a neighbor's cell,
+        # so other bins aren't evaluated until that activity itself settles.
+        active_settled = active is None or settled[active]
+        if time.time() >= self._settle_until and active_settled:
             for b in self._units:
                 if b == active or not settled[b]:
                     continue
@@ -376,7 +404,7 @@ class PlacementTracker:
             # the kit box, so a box-weight drop is never itself a fault — most
             # commonly it's the operator correcting an overpack, which should
             # just track straight back down like any other change.
-            placed = self._hysteretic(max(0.0, raw_placed), prev_placed, self._count_h(active))
+            placed = self._hysteretic(max(0.0, raw_placed), prev_placed, self._box_count_h(active))
 
             placed = min(placed, self._removed[active])
             self._placed[active] = placed

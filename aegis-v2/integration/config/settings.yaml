@@ -215,6 +215,14 @@ sensing:
                                   # raw reading (see placement.py's continuous-tracking comment)
       ema_alpha: 0.4              # weight smoothing: higher = snappier, lower = smoother
       hysteresis: 0.05            # anti-flicker deadband (fraction of an item)
+      # box_hysteresis: 0.05      # SAME deadband, but only for box-crediting (placed) —
+      #   defaults to `hysteresis` above if unset. The kit box is a physically
+      #   different, coarser (higher-capacity) load cell than the individual bin
+      #   cells, so its own noise floor in grams need not match theirs. If light
+      #   items register correctly in their own bin (removed) but unreliably in
+      #   the box (placed doesn't increase, or increases inconsistently), lower
+      #   this independently of `hysteresis` — changing that would also affect
+      #   the bin cells' own, already-reliable removed/added counting.
       # count_tolerance_g: 0.3    # absolute-gram floor for pick/place count rounding
       #   (removed/added/placed). hysteresis alone is a % of unit weight, which
       #   shrinks to near-nothing for light items (e.g. TE parts, 0.05*3.6g=0.18g) —
