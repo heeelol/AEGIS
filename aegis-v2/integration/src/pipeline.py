@@ -350,6 +350,7 @@ class Pipeline:
             box_cfg.get("tolerance_g"),
             ema_alpha=box_cfg.get("ema_alpha", 0.4),
             hysteresis=box_cfg.get("hysteresis", 0.25),
+            box_hysteresis=box_cfg.get("box_hysteresis"),
             box_tolerance_g=box_cfg.get("box_tolerance_g"),
             box_step_tolerance_g=box_cfg.get("box_step_tolerance_g"),
             activation_frac=box_cfg.get("activation_frac", 0.5),
