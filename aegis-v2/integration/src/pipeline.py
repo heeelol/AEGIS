@@ -221,6 +221,25 @@ class Pipeline:
             source = int(source)
         logger.info("Opening camera: %s", source)
 
+        # Jetson hardware-accelerated capture: decode MJPG on the NVDEC/nvjpeg
+        # block instead of the CPU (frees the CPU and unlocks a full 30 fps).
+        # Gated by config so the Windows dev laptop keeps the normal path below.
+        if cam.get("gstreamer_hw") and isinstance(source, int):
+            w = cam.get("width", 1280); h = cam.get("height", 720); fps = cam.get("fps", 30)
+            pipeline = (
+                f"v4l2src device=/dev/video{source} io-mode=2 ! "
+                f"image/jpeg,width={w},height={h},framerate={fps}/1 ! "
+                "nvv4l2decoder mjpeg=1 ! nvvidconv ! video/x-raw,format=BGRx ! "
+                "videoconvert ! video/x-raw,format=BGR ! "
+                "appsink drop=1 max-buffers=1 sync=false"
+            )
+            logger.info("Opening camera via GStreamer HW decode (/dev/video%s)", source)
+            self._cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+            if not self._cap.isOpened():
+                raise RuntimeError(f"GStreamer HW pipeline failed for /dev/video{source}")
+            logger.info("Camera (GStreamer HW): %dx%d @ %d fps MJPG->BGR", w, h, fps)
+            return
+
         # On Windows the default backend (MSMF) often fails to open USB webcams
         # (e.g. Logitech). DirectShow is reliable for integer camera indices; fall
         # back to the default backend if DirectShow can't open it.
@@ -637,6 +656,9 @@ class Pipeline:
         logger.info("Loading hand tracker: %s", backend)
         logger.info("Available backends: %s", TrackerRegistry.available())
         self._hand_tracker = TrackerRegistry.create(backend, ht_cfg)
+        # Run detection every Nth loop and reuse the last result between (hands
+        # move at human speed). 1 = every frame (default; no change on the laptop).
+        self._detect_every = max(1, int(ht_cfg.get("detect_every_n", 1)))
 
     def _create_engines(self) -> None:
         # Bin assignment — maps each hand to the bin it is hovering over.
@@ -656,6 +678,7 @@ class Pipeline:
                 warmup_frames=fg_cfg.get("warmup_frames", 30),
                 history=fg_cfg.get("history", 500),
                 var_threshold=fg_cfg.get("var_threshold", 16.0),
+                use_cuda=fg_cfg.get("cuda", False),
             )
             logger.info("Occlusion gate: foreground-evidence mode enabled "
                         "(patch=%d, warmup=%d)",
@@ -833,6 +856,7 @@ class Pipeline:
                     "at the HMI window OR in this terminal.")
         win = "AEGIS v2 — Bin Tracker"
         frame_count = 0
+        hands: list = []  # reused between detections when detect_every_n > 1
         t0 = time.time()
         show_overlay = self._overlay is not None
         show_fg = False  # 'm' toggles the foreground "model's-eye" tuning view
@@ -852,7 +876,8 @@ class Pipeline:
             if self._rotate_180:
                 frame = cv2.rotate(frame, cv2.ROTATE_180)
 
-            hands = self._hand_tracker.detect(frame)
+            if frame_count % self._detect_every == 0:
+                hands = self._hand_tracker.detect(frame)
 
             # Feed the foreground model every frame; once warmed, hand it to the
             # occlusion gate as a presence oracle over the current frame's mask.

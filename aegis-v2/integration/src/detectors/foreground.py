@@ -34,10 +34,27 @@ class ForegroundModel:
         warmup_frames: int = 30,
         history: int = 500,
         var_threshold: float = 16.0,
+        use_cuda: bool = False,
     ):
-        self._bg = cv2.createBackgroundSubtractorMOG2(
-            history=history, varThreshold=var_threshold, detectShadows=True
-        )
+        # Optionally run MOG2 on the GPU (cv2.cuda) — frees the CPU and is ~10x
+        # faster on a Jetson. Falls back to CPU if CUDA/cv2.cuda isn't available,
+        # so the same code runs on the dev laptop. Default False (CPU).
+        self._cuda = False
+        if use_cuda:
+            try:
+                if cv2.cuda.getCudaEnabledDeviceCount() > 0:
+                    self._bg = cv2.cuda.createBackgroundSubtractorMOG2(
+                        history=history, varThreshold=var_threshold, detectShadows=True
+                    )
+                    self._gpu = cv2.cuda_GpuMat()
+                    self._stream = cv2.cuda.Stream()
+                    self._cuda = True
+            except Exception:
+                self._cuda = False
+        if not self._cuda:
+            self._bg = cv2.createBackgroundSubtractorMOG2(
+                history=history, varThreshold=var_threshold, detectShadows=True
+            )
         self._patch = int(patch_size)
         self._warmup = int(warmup_frames)
         self._frames = 0
@@ -55,7 +72,13 @@ class ForegroundModel:
 
     def update(self, frame: np.ndarray) -> np.ndarray:
         """Apply the subtractor to ``frame`` and return a binary (0/1) mask."""
-        raw = self._bg.apply(frame)
+        if self._cuda:
+            self._gpu.upload(frame)
+            gpu_mask = self._bg.apply(self._gpu, -1.0, self._stream)
+            self._stream.waitForCompletion()
+            raw = gpu_mask.download()
+        else:
+            raw = self._bg.apply(frame)
         mask = (raw == _FOREGROUND).astype(np.uint8)
         self._frames += 1
         return mask
