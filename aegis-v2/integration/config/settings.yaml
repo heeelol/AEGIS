@@ -246,6 +246,23 @@ sensing:
                                   # a generic time-based debounce — fault_confirm_s has
                                   # been retired.
 
+  # Fault buzzer — an active buzzer wired straight to the MIC's DIO terminal
+  # (buzzer live → a DO channel, buzzer ground → DIO GND). It sounds ONLY while
+  # the kitting FSM is in a FAULT state (overpack / pick-from-wrong-bin /
+  # return-to-wrong-bin) and is silent otherwise. The pipeline drives the DO
+  # line silent the instant it starts, so the buzzer stays quiet until a real
+  # fault. Set enabled: false to switch the buzzer off entirely (no GPIO is
+  # touched). gpiochip/line identify the DO channel — discover them on the MIC
+  # with integration/tools/buzzer_test.py, then paste the values here. Any GPIO
+  # problem (missing libgpiod, wrong chip/line, no permission) degrades to a
+  # silent no-op — the buzzer can never take the pipeline down.
+  buzzer:
+    enabled: true          # false = buzzer feature fully off (no GPIO touched)
+    gpiochip: "gpiochip0"  # DO channel's gpiochip — from buzzer_test.py --list
+    line: 0                # DO channel's line offset — ditto
+    active_low: false      # flip to true if the buzzer sounds on a LOW line
+    pulse_hz: 2.0          # on/off toggles per second while a fault persists
+
 # --- OpenCV Camera Overlay -----------------------
 ui:
   enabled: true

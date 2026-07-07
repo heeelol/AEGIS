@@ -113,7 +113,50 @@ Changes apply on the **next `mic-run`** (restart the pipeline).
 
 ---
 
-## 7. Under the hood (for developers)
+## 7. Fault buzzer (MIC DIO)
+
+An active buzzer can be wired **straight to the MIC's DIO terminal** — buzzer
+**live → a DO channel**, buzzer **ground → a DIO GND** pin. No ESP32 wiring, no
+firmware reupload. It sounds **only** while the kitting FSM is in a **FAULT**
+state (over-pack, pick-from-wrong-bin, return-to-wrong-bin) and is silent the
+rest of the time. The pipeline drives the DO line silent the moment it starts,
+so a DO channel that idles low stays quiet until a real fault.
+
+**One-time setup — find the DO channel:**
+```bash
+mic                                              # shell on the MIC
+cd ~/AEGIS/aegis-v2
+python3 integration/tools/buzzer_test.py --list  # list gpiochips + lines
+python3 integration/tools/buzzer_test.py --chip gpiochip0 --line 5   # beep 3×
+```
+When you find the chip/line that beeps, put them in `settings.yaml`
+(`mic-config settings`) under `sensing.buzzer`:
+```yaml
+sensing:
+  buzzer:
+    enabled: true          # false = buzzer off entirely (no GPIO touched)
+    gpiochip: "gpiochip0"
+    line: 5
+    active_low: false      # set true if it beeps while IDLE and quiets when driven
+    pulse_hz: 2.0
+```
+Changes apply on the next `mic-run`.
+
+**Reading the test:**
+| What you observe | Meaning |
+|---|---|
+| Silent on connect, beeps during the test | Correct — you're done. |
+| Beeps the moment it's connected (even with nothing running) | That pin conducts at idle (a sink-type DO or a GND pin). Move the live wire to a different DO channel. |
+| Beeps while idle, quiet when driven | Right channel, inverted — set `active_low: true`. |
+| Audible but weak | The DO can't source much current — drive the buzzer through a small NPN transistor (DO → base). No software change. |
+
+> To silence the buzzer entirely, set `enabled: false`. Any GPIO problem
+> (missing `libgpiod`, wrong chip/line, no permission) degrades to a silent
+> no-op — the buzzer never takes the pipeline down.
+
+---
+
+## 8. Under the hood (for developers)
 
 - **Repo:** `~/AEGIS` on the MIC (branch `main`, GitHub `heeelol/AEGIS`).
 - **Run script:** `~/AEGIS/aegis-v2/run_pipeline.sh` (what `mic-run` calls) — sets
@@ -123,4 +166,7 @@ Changes apply on the **next `mic-run`** (restart the pipeline).
 - **Helper scripts on the MIC:** `~/mic-update.sh` (pull), `~/mic-browser.sh`
   (fullscreen/refresh), `~/mic-config.sh` (edit config), `~/mic-setup.sh` (laptop
   bootstrap).
-- **Hardware:** Logitech C270 camera → `/dev/video0`; ESP32 load cells → `/dev/ttyUSB0`.
+- **Hardware:** Logitech C270 camera → `/dev/video0`; ESP32 load cells →
+  `/dev/ttyUSB0`; fault buzzer → a MIC DIO DO channel (driven by
+  `integration/src/actuators/buzzer.py`, discovered with
+  `integration/tools/buzzer_test.py`).

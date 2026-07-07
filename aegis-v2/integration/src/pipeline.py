@@ -42,6 +42,7 @@ _DEFAULT_CONFIG = str(_ROOT / "integration" / "config" / "settings.yaml")
 from integration.src.engine import BinAssignmentEngine, BinRegion, OcclusionHold
 from integration.src.detectors.foreground import ForegroundModel
 from integration.src.sensing import LoadCellReader, PlacementTracker
+from integration.src.actuators import Buzzer
 from integration.src.engine.cycle import CycleManager
 from integration.src.ui.overlay import OverlayUI
 from integration.src.ui.state import PipelineState
@@ -183,6 +184,7 @@ class Pipeline:
         self._occupancy_ratio: float = 0.05                  # bottom-bin "forearm present" floor
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
+        self._buzzer: Optional[Buzzer] = None     # fault buzzer on the MIC DIO
         self._inventory = None                    # InventoryTracker (built with load cells)
         self._placement: Optional[PlacementTracker] = None  # kitting-box placement counting
         self._cycle: Optional[CycleManager] = None           # work-order cycle of sets
@@ -409,8 +411,15 @@ class Pipeline:
         falls back to the CV-detected grid. Once hardware is wired up, the same
         path supplies real layer counts and per-bin weights.
         """
-        lc_cfg = self._config.get("sensing", {}).get("loadcells", {})
+        sensing_cfg = self._config.get("sensing", {})
+        lc_cfg = sensing_cfg.get("loadcells", {})
         self._loadcells = LoadCellReader(lc_cfg)
+
+        # Fault buzzer on the MIC's DIO. Started here (before any fault can
+        # occur) so it's driven silent the instant the pipeline comes up,
+        # regardless of the DO line's power-on default.
+        self._buzzer = Buzzer(sensing_cfg.get("buzzer", {})).start()
+
         from integration.src.sensing import InventoryTracker
         self._inventory = InventoryTracker()        # loads config/inventory.yaml
 
@@ -565,8 +574,12 @@ class Pipeline:
         starting the next set.
         """
         if self._loadcells is None or self._placement is None:
+            self._set_buzzer(False)
             return
         if not self._loadcells.is_connected():
+            # A dropped link produces no new faults to announce; never leave
+            # the buzzer stuck on when data stops.
+            self._set_buzzer(False)
             return
         weights = self._loadcells.get_weights()
 
@@ -589,9 +602,14 @@ class Pipeline:
                           "message": "EMPTY THE KITTING BOX, THEN CONFIRM TO START THE NEXT SET"},
                 "box_id": self._placement.box_id,
             })
+            self._set_buzzer(False)  # empty-box prompt is not a fault
             return
 
         kit = self._placement.update(weights)
+        # Buzzer sounds for exactly the three FSM faults (overpack /
+        # pick-from-wrong-bin / return-to-wrong-bin) and goes quiet the moment
+        # the operator corrects the error.
+        self._set_buzzer(kit.state == "FAULT")
         for bin_id, count in kit.placed.items():
             self._state.set_pick_count(bin_id, count)
         self._state.update_kit({
@@ -607,6 +625,11 @@ class Pipeline:
             "alert": kit.alert,
             "box_id": self._placement.box_id,
         })
+
+    def _set_buzzer(self, on: bool) -> None:
+        """Drive the fault buzzer; safe no-op when the buzzer isn't present."""
+        if self._buzzer is not None:
+            self._buzzer.set_alarm(on)
 
     def _load_hand_tracker(self) -> None:
         ht_cfg = self._config.get("hand_tracker", {})
@@ -948,6 +971,8 @@ class Pipeline:
             term.stop()  # restore the terminal to normal (cooked) mode
         if self._hand_tracker:
             self._hand_tracker.release()
+        if self._buzzer:
+            self._buzzer.close()  # force silent before releasing the line
         if self._loadcells:
             self._loadcells.close()
         if self._cap:
