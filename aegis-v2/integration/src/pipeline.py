@@ -21,6 +21,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
+import select
 import sys
 import time
 from pathlib import Path
@@ -58,6 +60,81 @@ except ImportError:
     pass
 
 logger = logging.getLogger("aegis.pipeline")
+
+
+class _TerminalKeys:
+    """Non-blocking single-key reader for the controlling terminal (stdin).
+
+    The OpenCV window renders on the HMI's display (:0), so ``cv2.waitKey`` only
+    sees keys typed at the MIC itself. This lets an operator on a remote SSH
+    session drive the pipeline ('1'/'2' calibration, 'q' quit, 'm' tuning view,
+    and F11 fullscreen) by typing in the terminal that launched it. Returns the
+    logical key name, or None when nothing is pending. Recognises the F11 escape
+    sequence (CSI ``23~``). On a non-TTY stdin it degrades to a no-op.
+    """
+
+    # Multi-byte terminal escape sequences we care about → logical key.
+    _SEQS = {"\x1b[23~": "F11"}
+    _SINGLE = set("12qm")
+
+    def __init__(self) -> None:
+        self._fd = None
+        self._old = None
+        self._buf = ""
+        try:
+            import termios  # noqa: F401  (POSIX-only; absent on Windows)
+            if sys.stdin.isatty():
+                self._fd = sys.stdin.fileno()
+        except (ImportError, ValueError, OSError):
+            self._fd = None
+
+    def start(self) -> "_TerminalKeys":
+        if self._fd is not None:
+            import termios
+            import tty
+            self._old = termios.tcgetattr(self._fd)
+            tty.setcbreak(self._fd)  # read keys without waiting for Enter
+        return self
+
+    def __enter__(self) -> "_TerminalKeys":
+        return self.start()
+
+    def get(self) -> Optional[str]:
+        """Return one pending logical key ('1','2','q','m','F11'), or None."""
+        if self._fd is None:
+            return None
+        # Drain everything currently available so multi-byte sequences arrive whole.
+        while select.select([sys.stdin], [], [], 0)[0]:
+            chunk = os.read(self._fd, 64)
+            if not chunk:
+                break
+            self._buf += chunk.decode("latin-1", "ignore")
+        if not self._buf:
+            return None
+        # Complete known escape sequence?
+        for seq, name in self._SEQS.items():
+            if self._buf.startswith(seq):
+                self._buf = self._buf[len(seq):]
+                return name
+        # Partial prefix of a known sequence → wait for the rest.
+        if any(seq.startswith(self._buf) for seq in self._SEQS):
+            return None
+        # Unknown escape sequence (arrows, etc.) → drop it and resync.
+        if self._buf.startswith("\x1b"):
+            self._buf = ""
+            return None
+        # Plain single character.
+        c, self._buf = self._buf[0], self._buf[1:]
+        return c if c in self._SINGLE else None
+
+    def stop(self) -> None:
+        if self._fd is not None and self._old is not None:
+            import termios
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
+            self._old = None
+
+    def __exit__(self, *exc) -> None:
+        self.stop()
 
 
 def _load_config(path: str) -> dict:
@@ -702,16 +779,48 @@ class Pipeline:
 
     # ── Stage 2: Sense → Analyse → Act loop ──────────────────
 
+    # Full key codes reported by cv2.waitKeyEx at the HMI window. Normal ASCII
+    # keys come back as their ordinal; F11 is a special code that varies by GUI
+    # backend (GTK reports 65480). Terminal F11 is handled separately via CSI 23~.
+    _WIN_KEYMAP = {
+        ord("q"): "q", ord("1"): "1", ord("2"): "2", ord("m"): "m",
+        65480: "F11", 0xFFC8: "F11",
+    }
+
+    def _read_command(self, show_overlay: bool) -> Optional[str]:
+        """Return one logical command ('1','2','q','m','F11') from the HMI
+        overlay window and/or the controlling terminal, or None.
+
+        ``cv2.waitKeyEx`` must be called when the window is shown — it both pumps
+        the GUI event loop (so ``imshow`` actually paints) and returns keys typed
+        at the HMI. Terminal keys take priority so a remote SSH operator wins.
+        """
+        cmd = None
+        if show_overlay:
+            code = cv2.waitKeyEx(1)
+            if code != -1:
+                cmd = self._WIN_KEYMAP.get(code)
+        term = getattr(self, "_term_keys", None)
+        tcmd = term.get() if term is not None else None
+        return tcmd or cmd
+
     def _main_loop(self) -> None:
-        logger.info("Entering Sense-Analyse-Act loop (press 'q' to quit, "
-                    "'m' to toggle the foreground tuning view)...")
+        logger.info("Entering Sense-Analyse-Act loop. Keys: '1' calibrate grid, "
+                    "'2' init kit, F11 fullscreen, 'm' tuning view, 'q' quit — "
+                    "at the HMI window OR in this terminal.")
+        win = "AEGIS v2 — Bin Tracker"
         frame_count = 0
         t0 = time.time()
         show_overlay = self._overlay is not None
         show_fg = False  # 'm' toggles the foreground "model's-eye" tuning view
+        fullscreen = False  # F11 toggles the overlay window fullscreen
 
         if show_overlay:
-            cv2.namedWindow("AEGIS v2 — Bin Tracker", cv2.WINDOW_NORMAL)
+            cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+
+        # Accept keystrokes from the controlling terminal too (SSH), not just the
+        # HMI overlay window. Restored in _cleanup().
+        self._term_keys = _TerminalKeys().start()
 
         while True:
             ret, frame = self._cap.read()
@@ -782,18 +891,26 @@ class Pipeline:
                         self._foreground.patch_size, self._foreground.ready)
                 else:
                     display = self._overlay.render(frame, hands, events)
-                cv2.imshow("AEGIS v2 — Bin Tracker", display)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
-                    break
-                if key == ord("1"):
-                    self._calibrate_grid(frame)
-                elif key == ord("2"):
-                    self._init_kit(frame)
-                elif key == ord("m"):
-                    show_fg = not show_fg
-                    logger.info("Foreground tuning view %s",
-                                "ON" if show_fg else "OFF")
+                cv2.imshow(win, display)
+
+            # One command from the HMI window and/or this terminal (SSH).
+            cmd = self._read_command(show_overlay)
+            if cmd == "q":
+                break
+            elif cmd == "1":
+                self._calibrate_grid(frame)
+            elif cmd == "2":
+                self._init_kit(frame)
+            elif cmd == "F11" and show_overlay:
+                fullscreen = not fullscreen
+                cv2.setWindowProperty(
+                    win, cv2.WND_PROP_FULLSCREEN,
+                    cv2.WINDOW_FULLSCREEN if fullscreen else cv2.WINDOW_NORMAL)
+                logger.info("Overlay fullscreen %s", "ON" if fullscreen else "OFF")
+            elif cmd == "m":
+                show_fg = not show_fg
+                logger.info("Foreground tuning view %s",
+                            "ON" if show_fg else "OFF")
 
             frame_count += 1
 
@@ -826,6 +943,9 @@ class Pipeline:
 
     def _cleanup(self) -> None:
         logger.info("Shutting down pipeline...")
+        term = getattr(self, "_term_keys", None)
+        if term is not None:
+            term.stop()  # restore the terminal to normal (cooked) mode
         if self._hand_tracker:
             self._hand_tracker.release()
         if self._loadcells:
