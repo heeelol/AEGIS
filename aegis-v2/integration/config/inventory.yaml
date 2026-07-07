@@ -10,7 +10,7 @@
 # Component catalogue (names + unit weights) — integrated from v2_test 2026-06-30.
 items:
   # item_name: { unit_g: <grams per single item> }
-  pcb_connector:            { unit_g: 128.0 }
+  pvc_connector:            { unit_g: 128.0 }
   copper_rod:          { unit_g: 23.9 }
   te_completed_part:   { unit_g: 12.5 }
   te_uncompleted_part: { unit_g: 3.5 }
@@ -18,13 +18,16 @@ items:
   shelf_bracket:       { unit_g: 5.1 }
   bin_conn_big:         { unit_g: 15.1 }
   bin_conn_med:         { unit_g: 9.8 }
+  m8_allen_pan_screw: { unit_g: 27.5 }
+  m10_cs_allen_screw: { unit_g: 45.0 }
+  m12_hex_bolt: { unit_g: 74.0 }
 
 # Bin -> component links. bin_id = canonical grid id (AFTER bin_remap in settings.yaml).
 bins:
-  bin_0_3: shelf_bracket
-  bin_0_1: te_completed_part
+  bin_0_3: bin_conn_big
+  bin_0_1: shelf_bracket
   bin_0_0: m6_cross_screw
-  bin_0_5: te_uncompleted_part 
-  bin_1_1: pcb_connector
+  bin_0_5: m8_allen_pan_screw
+  bin_1_1: pvc_connector
   bin_1_2: copper_rod
-  bin_1_0: bin_conn_big
+  bin_1_0: m12_hex_bolt
