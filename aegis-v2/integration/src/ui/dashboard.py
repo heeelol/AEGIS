@@ -157,31 +157,6 @@ def create_app(state: Optional[PipelineState] = None) -> FastAPI:
             _state.set_work_order(targets)
         return {"status": "ok"}
 
-    @app.post("/api/bins/{bin_id}/pick")
-    def override_pick_count(bin_id: str, body: dict):
-        """
-        Manual override for the load-cell pick count on a bin.
-        Body: {"delta": ±N}  -- nudge by N (signed)
-              {"count": N}   -- set to absolute N
-        Returns the new pick count, or 404 if the bin is unknown.
-        """
-        if _state is None:
-            return JSONResponse({"error": "no state"}, status_code=503)
-
-        if "delta" in body:
-            new_val = _state.adjust_pick_count(bin_id, body["delta"])
-        elif "count" in body:
-            new_val = _state.set_pick_count(bin_id, body["count"])
-        else:
-            return JSONResponse(
-                {"error": "body must include 'delta' or 'count'"},
-                status_code=400,
-            )
-
-        if new_val is None:
-            return JSONResponse({"error": f"unknown bin {bin_id}"}, status_code=404)
-        return {"bin_id": bin_id, "current": new_val}
-
     # ── Static files & index ─────────────────────────────────
 
     @app.get("/")

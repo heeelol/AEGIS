@@ -44,7 +44,7 @@ async function poll() {
     ]);
     if (!binsRes.ok) throw new Error("Backend error");
 
-    const bins   = await binsRes.json();
+    const bins = await binsRes.json();
     const layout = await layoutRes.json();
     const stats  = await statsRes.json();
     const kit    = kitRes.ok ? await kitRes.json() : {};
