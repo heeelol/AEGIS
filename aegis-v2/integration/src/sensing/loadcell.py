@@ -65,6 +65,10 @@ class LoadCellReader:
         self._port = self._config.get("port", "/dev/ttyUSB0")
         self._baudrate = int(self._config.get("baudrate", 115200))
         self._stale_after = float(self._config.get("stale_after", 2.0))
+        # Optional {firmware_bin_id: canonical_bin_id} rename, applied to every
+        # reading before it is cached, so all downstream consumers (weights,
+        # layout, inventory, dashboard) see the canonical id.
+        self._remap: dict[str, str] = dict(self._config.get("bin_remap") or {})
 
         self._serial = None
         self._thread: threading.Thread | None = None
@@ -116,6 +120,7 @@ class LoadCellReader:
                 continue  # timeout, no data this tick
             weights = self._parse_line(raw)
             if weights is not None:
+                weights = self._apply_remap(weights)
                 with self._lock:
                     self._weights = weights
                     self._last_rx = time.time()
@@ -143,7 +148,19 @@ class LoadCellReader:
                 continue
         return out
 
+    def _apply_remap(self, weights: dict[str, float]) -> dict[str, float]:
+        """Rename bin ids per ``self._remap``; identity when remap/weights empty."""
+        if not self._remap or not weights:
+            return weights
+        return {self._remap.get(bin_id, bin_id): grams
+                for bin_id, grams in weights.items()}
+
     # ── Public interface (unchanged contract) ────────────────
+
+    @property
+    def is_enabled(self) -> bool:
+        """True when load cells are enabled in config, regardless of connection state."""
+        return self._enabled
 
     def is_connected(self) -> bool:
         """True when the port is open and data arrived within ``stale_after``."""
@@ -202,7 +219,12 @@ class LoadCellReader:
 if __name__ == "__main__":
     import argparse
 
-    from inventory import InventoryTracker
+    # Works both as `-m integration.src.sensing.loadcell` (package-relative) and
+    # as a plain script run from this directory (flat import).
+    try:
+        from .inventory import InventoryTracker
+    except ImportError:
+        from inventory import InventoryTracker
 
     parser = argparse.ArgumentParser(description="Standalone load-cell serial tester")
     parser.add_argument("--port", default="/dev/ttyUSB0",

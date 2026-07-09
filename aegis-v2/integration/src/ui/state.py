@@ -44,8 +44,6 @@ class HandStatus:
     hand_id: int
     handedness: str
     position: tuple[float, float] = (0.0, 0.0)
-    is_grabbing: bool = False
-    grab_score: float = 0.0
     assigned_bin: Optional[str] = None
 
 
@@ -62,9 +60,6 @@ class PipelineState:
         self._lock = threading.Lock()
         self._bins: dict[str, BinStatus] = {}
         self._hands: list[HandStatus] = []
-        self._fsm_state: str = "idle"
-        self._fsm_bin_id: Optional[str] = None
-        self._fsm_elapsed: float = 0.0
         self._errors: list[dict] = []
         self._fps: float = 0.0
         self._last_update: float = 0.0
@@ -76,6 +71,28 @@ class PipelineState:
         # falls back to the CV-detected grid in that case.
         self._loadcell_layout: LayerLayout = LayerLayout()
         self._loadcell_weights: dict[str, float] = {}
+
+        # Kitting-box (3-load-receptor demo): latest snapshot from the placement
+        # tracker, plus a one-shot "complete kit" request raised by the UI and
+        # consumed by the pipeline (which re-tares the receptors for the next kit).
+        self._kit: dict = {}
+        self._complete_requested: bool = False
+
+        # Work-order cycle: latest {set_number, total_sets, complete} snapshot,
+        # plus a one-shot "start new cycle" request raised by the UI.
+        self._cycle: dict = {}
+        self._restart_requested: bool = False
+
+        # One-shot "operator confirmed the kitting box is physically empty" flag,
+        # raised by the UI's popup and consumed by the pipeline to tare the
+        # receptors and unblock the next set. Manual — no automatic weight check.
+        self._empty_confirmed_requested: bool = False
+
+        # Sequential pick lock: the one bin currently in progress. The first pick on
+        # a bin locks it (only it counts); hitting its target completes it (added to
+        # `_done`) and releases the lock so any other bin can be started next.
+        self._active_bin: Optional[str] = None
+        self._done: set[str] = set()
 
     # ── Writers (called by the pipeline loop) ────────────────
 
@@ -112,8 +129,6 @@ class PipelineState:
                     hand_id=hand.hand_id,
                     handedness=hand.handedness,
                     position=center,
-                    is_grabbing=getattr(hand, "is_grabbing", False),
-                    grab_score=getattr(hand, "grab_score", 0.0),
                     assigned_bin=ev.bin_id if ev else None,
                 ))
 
@@ -129,27 +144,22 @@ class PipelineState:
                     b.hand_id = None
                     b.handedness = ""
 
-    def update_fsm(self, state: str, bin_id: Optional[str], elapsed: float) -> None:
-        """Update FSM state display."""
-        with self._lock:
-            self._fsm_state = state
-            self._fsm_bin_id = bin_id
-            self._fsm_elapsed = elapsed
-
     def record_pick(self, bin_id: str) -> None:
-        """Increment pick count for a bin (called on FSM success)."""
-        with self._lock:
-            if bin_id in self._bins:
-                self._bins[bin_id].pick_count += 1
-
-    def adjust_pick_count(self, bin_id: str, delta: int) -> Optional[int]:
-        """Nudge a bin's pick count by `delta`. Clamped to ≥0. Returns new value."""
+        """Increment pick count, enforcing the sequential one-bin-at-a-time lock."""
         with self._lock:
             b = self._bins.get(bin_id)
             if b is None:
-                return None
-            b.pick_count = max(0, b.pick_count + int(delta))
-            return b.pick_count
+                return
+            # First pick locks this bin; while locked, only this bin counts.
+            if self._active_bin is None:
+                self._active_bin = bin_id
+            elif self._active_bin != bin_id:
+                return  # another bin is in progress → ignore out-of-order pick
+            b.pick_count += 1
+            # Target met → complete the bin and release the lock for the next one.
+            if b.target_count > 0 and b.pick_count >= b.target_count:
+                self._done.add(bin_id)
+                self._active_bin = None
 
     def set_pick_count(self, bin_id: str, count: int) -> Optional[int]:
         """Set a bin's pick count to `count`. Clamped to ≥0. Returns new value."""
@@ -193,11 +203,60 @@ class PipelineState:
             if weights is not None:
                 self._loadcell_weights = dict(weights)
 
+    def update_kit(self, kit: dict) -> None:
+        """Store the latest kitting-box snapshot (called by the pipeline)."""
+        with self._lock:
+            self._kit = dict(kit)
+
+    def update_cycle(self, cycle: dict) -> None:
+        """Store the latest cycle/set snapshot (called by the pipeline)."""
+        with self._lock:
+            self._cycle = dict(cycle)
+
+    def request_complete(self) -> None:
+        """UI asks to close the current kit (one-shot; consumed by the pipeline)."""
+        with self._lock:
+            self._complete_requested = True
+
+    def consume_complete_request(self) -> bool:
+        """Pipeline checks/clears the close-kit request. True if one was pending."""
+        with self._lock:
+            pending = self._complete_requested
+            self._complete_requested = False
+            return pending
+
+    def request_restart(self) -> None:
+        """UI asks to start a new cycle from set 1 (one-shot; consumed by pipeline)."""
+        with self._lock:
+            self._restart_requested = True
+
+    def consume_restart_request(self) -> bool:
+        """Pipeline checks/clears the new-cycle request. True if one was pending."""
+        with self._lock:
+            pending = self._restart_requested
+            self._restart_requested = False
+            return pending
+
+    def request_empty_confirmed(self) -> None:
+        """UI confirms the kitting box has been physically emptied (one-shot;
+        consumed by the pipeline, which tares the receptors and unblocks the
+        next set)."""
+        with self._lock:
+            self._empty_confirmed_requested = True
+
+    def consume_empty_confirmed_request(self) -> bool:
+        """Pipeline checks/clears the empty-confirmed request. True if one was pending."""
+        with self._lock:
+            pending = self._empty_confirmed_requested
+            self._empty_confirmed_requested = False
+            return pending
+
     # ── Readers (called by FastAPI endpoints) ────────────────
 
     def get_bins(self) -> list[dict]:
         with self._lock:
             result = []
+            removed_map = self._kit.get("removed", {}) if self._kit else {}
             for b in self._bins.values():
                 status = self._calculate_bin_status(b)
                 layer, col = self._parse_bin_id(b.bin_id)
@@ -206,7 +265,8 @@ class PipelineState:
                     "label": b.label,
                     "layer": layer,
                     "col": col,
-                    "current": b.pick_count,
+                    "current": b.pick_count,           # placed (verified in box)
+                    "removed": removed_map.get(b.bin_id, b.pick_count),  # taken out of bin
                     "total": b.target_count,
                     "status": status,
                     "using": b.using,
@@ -217,6 +277,25 @@ class PipelineState:
                 })
             return result
 
+    def get_kit(self) -> dict:
+        """Latest kitting-box state for the dashboard, incl. the sequential lock.
+
+        ``active`` = the bin currently in progress (the UI locks/dims the others);
+        ``done`` = completed bins (shown green/frozen). Read by ``binUiState`` in app.js.
+        """
+        with self._lock:
+            kit = dict(self._kit)
+            if "active" not in kit:
+                kit["active"] = self._active_bin
+            if "done" not in kit:
+                kit["done"] = sorted(self._done)
+            return kit
+
+    def get_cycle(self) -> dict:
+        """Latest cycle/set state for the dashboard: {set_number, total_sets, complete}."""
+        with self._lock:
+            return dict(self._cycle)
+
     def get_hands(self) -> list[dict]:
         with self._lock:
             return [
@@ -225,20 +304,10 @@ class PipelineState:
                     "handedness": h.handedness,
                     "x": h.position[0],
                     "y": h.position[1],
-                    "is_grabbing": h.is_grabbing,
-                    "grab_score": h.grab_score,
                     "assigned_bin": h.assigned_bin,
                 }
                 for h in self._hands
             ]
-
-    def get_fsm(self) -> dict:
-        with self._lock:
-            return {
-                "state": self._fsm_state,
-                "bin_id": self._fsm_bin_id,
-                "elapsed": self._fsm_elapsed,
-            }
 
     def get_errors(self) -> list[dict]:
         with self._lock:

@@ -1,0 +1,302 @@
+"""Unit tests for the occlusion gate in BinAssignmentEngine.
+
+Pure geometry — no camera, no model, no cv2. Drives the engine with a
+hand-built bin map and synthetic HandDetections, mirroring test_occlusion_hold.
+
+Grid used throughout (y increases downward; row 0 = top):
+
+      x:  0----100----200
+  y 0  +--------+--------+
+       | bin_0_0| bin_0_1|   top row  (single cells)
+  100  +--------+--------+   <- occlusion line (bottom-bin top rim)
+       | bin_1_0| bin_1_1|   bottom row
+  200  +--------+--------+
+"""
+import math
+import os
+import sys
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, _ROOT)
+
+from hand_models.common import HandDetection, HandLandmark  # noqa: E402
+from integration.src.engine.bin_assignment import BinAssignmentEngine  # noqa: E402
+
+
+# ── Fixtures ────────────────────────────────────────────────
+
+def two_row_geofences():
+    return {
+        "bin_0_0": {"x_min": 0,   "x_max": 100, "y_min": 0,   "y_max": 100, "confidence": 0.9},
+        "bin_0_1": {"x_min": 100, "x_max": 200, "y_min": 0,   "y_max": 100, "confidence": 0.9},
+        "bin_1_0": {"x_min": 0,   "x_max": 100, "y_min": 100, "y_max": 200, "confidence": 0.8},
+        "bin_1_1": {"x_min": 100, "x_max": 200, "y_min": 100, "y_max": 200, "confidence": 0.8},
+    }
+
+
+def make_engine(geofences=None, enabled=True):
+    if geofences is None:
+        geofences = two_row_geofences()
+    eng = BinAssignmentEngine({
+        "method": "point_in_polygon",
+        "hand_keypoint": "index_tip",
+        "occlusion_gate": {"enabled": enabled},
+    })
+    eng.set_bin_map_from_geofences(geofences)
+    return eng
+
+
+def make_hand(index_tip, mcps=None, wrist=None, hand_id=0, handedness="right"):
+    """Build a synthetic hand.
+
+    index_tip : (x, y) of the reaching keypoint.
+    mcps      : (x, y) shared by all four MCP knuckles, or None to omit them.
+    wrist     : (x, y) of the wrist, or None to omit it. Use math.nan coords
+                to model a present-but-non-finite wrist.
+    """
+    lms = [HandLandmark(name="index_tip", x=index_tip[0], y=index_tip[1])]
+    if mcps is not None:
+        for name in ("index_mcp", "middle_mcp", "ring_mcp", "pinky_mcp"):
+            lms.append(HandLandmark(name=name, x=mcps[0], y=mcps[1]))
+    if wrist is not None:
+        lms.append(HandLandmark(name="wrist", x=wrist[0], y=wrist[1]))
+    return HandDetection(hand_id=hand_id, handedness=handedness, landmarks=lms)
+
+
+FRAME = (200, 200, 3)  # (h, w, channels) — like frame.shape
+
+
+# ── Tests ───────────────────────────────────────────────────
+
+def test_false_top_hit_knuckles_low_reassigned():
+    """Wrist hidden, MCP centroid below the bottom rim, fingertip extrapolated
+    into a top bin → reassigned to the bottom bin beneath."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 150))  # no wrist
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_1_0"
+    assert ev.method == "occlusion_gate"
+    assert ev.confidence == 0.8       # taken from the bottom bin
+    assert ev.hand_point == (50, 50)  # fingertip preserved
+
+
+def test_genuine_top_reach_untouched():
+    """Knuckles up near the top bin (above the rim), fingertip in top bin →
+    event untouched."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 30), mcps=(50, 60))
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_0_0"
+    assert ev.method == "point_in_polygon"
+
+
+def test_knuckles_win_over_low_wrist_top_reach_untouched():
+    """Over-the-shelf reach: fingertip and knuckles are up in the top bin, but
+    the wrist trails back down over the bottom bin. The knuckles — not the
+    wrist — decide where the hand is, so the genuine top pick is left untouched.
+
+    (Regression: the wrist used to win here and wrongly reassigned to bin_1_0.)"""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 40), wrist=(50, 150))
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_0_0"
+    assert ev.method == "point_in_polygon"
+
+
+def test_knuckles_low_reassigned_even_with_high_wrist():
+    """Mirror: knuckles below the rim (hand in the bottom band, fingertip
+    extrapolated up) → reassigned, regardless of a wrist that reads above."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 150), wrist=(50, 40))
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_1_0"
+    assert ev.method == "occlusion_gate"
+
+
+def test_wrist_fallback_when_no_knuckles():
+    """No knuckles available → wrist is the fallback anchor. Wrist below rim →
+    reassigned to the bottom bin beneath."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), wrist=(50, 150))  # no mcps
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_1_0"
+    assert ev.method == "occlusion_gate"
+
+
+def test_wrist_fallback_offframe_cannot_judge():
+    """No knuckles and the wrist is off-frame → no usable anchor → the gate
+    cannot judge and leaves the event untouched."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), wrist=(50, -50))  # no mcps, wrist off-frame
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_0_0"
+    assert ev.method == "point_in_polygon"
+
+
+def test_wrist_fallback_non_finite_cannot_judge():
+    """No knuckles and a present-but-NaN wrist → no usable anchor → untouched."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), wrist=(math.nan, math.nan))  # no mcps
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_0_0"
+    assert ev.method == "point_in_polygon"
+
+
+def test_angled_reach_no_bottom_bin_suppressed():
+    """Anchor below the global line but its x is under no bottom bin (reaching in
+    at an angle) → suppressed, not reassigned."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(250, 150))  # anchor x off the grid
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id is None
+    assert ev.method == "occlusion_gate"
+
+
+def test_anchor_above_rim_steep_top_pick_untouched():
+    """True top pick at a steep angle: fingertip in top bin, anchor x under a
+    bottom bin but anchor y above the rim → untouched."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(150, 30), mcps=(150, 80))
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_0_1"
+    assert ev.method == "point_in_polygon"
+
+
+def test_disabled_is_passthrough():
+    """enabled: false → identical to pre-gate behavior (false top hit stays top)."""
+    eng = make_engine(enabled=False)
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 150))
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_0_0"
+    assert ev.method == "point_in_polygon"
+
+
+def test_single_row_layout_gate_inert():
+    """Only one row → no top rows → gate never reassigns."""
+    single = {
+        "bin_0_0": {"x_min": 0,   "x_max": 100, "y_min": 0, "y_max": 200, "confidence": 0.9},
+        "bin_0_1": {"x_min": 100, "x_max": 200, "y_min": 0, "y_max": 200, "confidence": 0.9},
+    }
+    eng = make_engine(single)
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 150))
+    [ev] = eng.assign([hand], FRAME)
+    assert ev.bin_id == "bin_0_0"
+    assert ev.method == "point_in_polygon"
+
+
+def test_assign_without_frame_shape_still_gates():
+    """assign(hands) with no frame_shape skips the in-frame check but still
+    runs the gate via the MCP centroid."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 150))
+    [ev] = eng.assign([hand])  # no frame_shape
+    assert ev.bin_id == "bin_1_0"
+    assert ev.method == "occlusion_gate"
+
+
+# ── Foreground-evidence gate (presence_fn) ──────────────────
+#
+# When a presence oracle is supplied, the gate decides on real image evidence at
+# the claimed fingertip instead of the (extrapolated) landmark anchor.
+
+def test_fg_no_evidence_reassigned_even_when_knuckles_read_high():
+    """The robustness gain: knuckles are extrapolated UP into the top bin (which
+    fools the landmark gate — see test_genuine_top_reach_untouched), but there is
+    no real foreground up there → reassigned to the bottom bin beneath."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 40))  # knuckles high
+    [ev] = eng.assign([hand], FRAME, presence_fn=lambda px, py: 0.0)
+    assert ev.bin_id == "bin_1_0"
+    assert ev.method == "occlusion_gate"
+    assert ev.confidence == 0.8       # taken from the bottom bin
+    assert ev.hand_point == (50, 50)  # fingertip preserved
+
+
+def test_fg_strong_evidence_kept_even_when_knuckles_read_low():
+    """Mirror: knuckles read LOW (the landmark gate would reassign to bottom),
+    but there is real foreground in the top bin → kept on the top bin."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 150))  # knuckles low
+    [ev] = eng.assign([hand], FRAME, presence_fn=lambda px, py: 0.9)
+    assert ev.bin_id == "bin_0_0"
+    assert ev.method == "point_in_polygon"  # untouched
+
+
+def test_fg_no_evidence_no_bottom_bin_suppressed():
+    """No foreground and the fingertip's column has no bottom bin beneath it →
+    suppressed rather than left as a false top hit."""
+    geo = {
+        "bin_0_0": {"x_min": 0,   "x_max": 100, "y_min": 0,   "y_max": 100, "confidence": 0.9},
+        "bin_0_2": {"x_min": 200, "x_max": 300, "y_min": 0,   "y_max": 100, "confidence": 0.9},
+        "bin_1_0": {"x_min": 0,   "x_max": 100, "y_min": 100, "y_max": 200, "confidence": 0.8},
+    }
+    eng = make_engine(geo)
+    hand = make_hand(index_tip=(250, 50))  # in bin_0_2, no bottom bin under x=250
+    [ev] = eng.assign([hand], (200, 300, 3), presence_fn=lambda px, py: 0.0)
+    assert ev.bin_id is None
+    assert ev.method == "occlusion_gate"
+
+
+def test_fg_presence_none_falls_back_to_landmark_gate():
+    """presence_fn=None → the landmark anchor gate runs (existing behavior)."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 50), mcps=(50, 150))
+    [ev] = eng.assign([hand], FRAME, presence_fn=None)
+    assert ev.bin_id == "bin_1_0"
+    assert ev.method == "occlusion_gate"
+
+
+def test_bottom_bin_ids_returns_bottom_row():
+    """bottom_bin_ids() exposes the bottom-row ids for the occlusion hold."""
+    eng = make_engine()
+    assert eng.bottom_bin_ids() == {"bin_1_0", "bin_1_1"}
+
+
+def _ev(hand_point, hand_id=0, bin_id=None):
+    from types import SimpleNamespace
+    return SimpleNamespace(hand_point=hand_point, hand_id=hand_id, bin_id=bin_id)
+
+
+def test_hand_above_releases_bottom_when_visible():
+    """A visible (non-occluded) fingertip above a bottom bin's rim (x-overlap) →
+    the hand has emerged above the rack; that bottom bin must not be held."""
+    eng = make_engine()  # bottom bins y_min = 100
+    blocked = eng.bottom_bins_with_hand_above([_ev((50, 50))], occluded_ids=set())
+    assert blocked == {"bin_1_0"}  # fingertip x=50 over bin_1_0, y=50 above rim 100
+
+
+def test_hand_above_ignores_occluded_fingertip():
+    """An occluded fingertip above the bin (the extrapolated tip of a real
+    under-shelf reach) does NOT release — genuine bottom picks keep holding."""
+    eng = make_engine()
+    blocked = eng.bottom_bins_with_hand_above([_ev((50, 50), hand_id=0)],
+                                              occluded_ids={0})
+    assert blocked == set()
+
+
+def test_hand_inside_or_below_bin_does_not_release():
+    """A fingertip at/below the bottom rim (in the bin) is not 'above' → no release."""
+    eng = make_engine()
+    blocked = eng.bottom_bins_with_hand_above([_ev((50, 150))], occluded_ids=set())
+    assert blocked == set()
+
+
+def test_hand_above_ignores_missing_point_and_single_row():
+    eng = make_engine()
+    assert eng.bottom_bins_with_hand_above([_ev(None)], occluded_ids=set()) == set()
+    single = {
+        "bin_0_0": {"x_min": 0,   "x_max": 100, "y_min": 0, "y_max": 200, "confidence": 0.9},
+        "bin_0_1": {"x_min": 100, "x_max": 200, "y_min": 0, "y_max": 200, "confidence": 0.9},
+    }
+    eng2 = make_engine(single)
+    assert eng2.bottom_bins_with_hand_above([_ev((50, 50))], occluded_ids=set()) == set()
+
+
+def test_fg_evidence_ignored_for_bottom_row_assignment():
+    """A hand already assigned to a bottom bin is never touched by the gate,
+    regardless of the presence oracle."""
+    eng = make_engine()
+    hand = make_hand(index_tip=(50, 150))  # already in bin_1_0
+    [ev] = eng.assign([hand], FRAME, presence_fn=lambda px, py: 0.0)
+    assert ev.bin_id == "bin_1_0"
+    assert ev.method == "point_in_polygon"
