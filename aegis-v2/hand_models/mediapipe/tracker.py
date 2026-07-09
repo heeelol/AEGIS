@@ -40,6 +40,18 @@ _LANDMARK_NAMES = [
 ]
 
 
+def _landmark_confidence(lm) -> float:
+    """Per-landmark confidence from a MediaPipe landmark.
+
+    The Tasks-API hand model exposes a ``visibility`` field but leaves it
+    unset (``None``) — ``getattr(lm, "visibility", 1.0)`` returns that ``None``
+    rather than the default, which then breaks float comparisons downstream.
+    Treat an absent or ``None`` visibility as fully confident.
+    """
+    visibility = getattr(lm, "visibility", None)
+    return 1.0 if visibility is None else float(visibility)
+
+
 class MediaPipeTracker(BaseHandTracker):
     """Hand tracker using MediaPipe Tasks Hand Landmarker (VIDEO mode)."""
 
@@ -113,7 +125,7 @@ class MediaPipeTracker(BaseHandTracker):
                     x=lm.x * w,
                     y=lm.y * h,
                     z=lm.z,
-                    confidence=getattr(lm, "visibility", 1.0),
+                    confidence=_landmark_confidence(lm),
                 ))
 
             # Handedness

@@ -104,3 +104,7 @@ class InventoryTracker:
     def item_for(self, bin_id: str) -> str | None:
         """The item name assigned to a bin, or None if unmapped."""
         return self._item.get(bin_id)
+
+    def units(self) -> dict[str, float]:
+        """bin_id -> unit weight (grams) for every inventory-mapped bin."""
+        return dict(self._unit_g)

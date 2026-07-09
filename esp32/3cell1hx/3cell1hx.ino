@@ -76,6 +76,7 @@ Bin bins[NUM_BINS] = {
   // { "bin_1_1", J10, CELL, 0 }, //TODO solder the jst for this
 };
 
+
 HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
@@ -83,7 +84,7 @@ const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
 const float CAL_MASS_G     = 203.6;  // known reference mass, grams
 
 // ---------- FILTER ----------
-const int N_SAMPLES = 3;    // readings averaged per bin per cycle
+const int N_SAMPLES = 1;    // readings averaged per bin per cycle
                             // (low keeps the JSON cadence up; HX711 is ~10 SPS)
 
 void setup() {
