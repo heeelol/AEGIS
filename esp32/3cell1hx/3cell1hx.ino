@@ -44,7 +44,7 @@ const float CELL1 = 74.1207;
 const float CELL2 = 68.1992;
 const float CELL3 = 71.6398;
 const float CELL4 = 143.7663;
-const float CELL5 = 141.6425;
+const float CELL5 = 141.1965;
 const float CELL6 = 118.5296;
 const float CELL7 = 1009.8922; //TODO FIX MECH SIDE THEN RECALIB
 const float CELL8 = 1056.6241; //TODO FIX MECH SIDE THEN RECALIB
@@ -80,11 +80,13 @@ HX711 cell[NUM_BINS];
 
 // ---------- CALIBRATION ----------
 const bool  DO_CALIBRATION = false;  // true to (re)calibrate; false to run
-const float CAL_MASS_G     = 203.6;  // known reference mass, grams
+const float CAL_MASS_G     = 677.8;  // known reference mass, grams
 
 // ---------- FILTER ----------
-const int N_SAMPLES = 3;    // readings averaged per bin per cycle
+const int N_SAMPLES = 1;    // readings averaged per bin per cycle
                             // (low keeps the JSON cadence up; HX711 is ~10 SPS)
+
+String cmd = "null";                          
 
 void setup() {
   Serial.begin(115200);
@@ -120,6 +122,9 @@ void setup() {
     }
     Serial.println(F("Boot tare done. Using stored scale."));
   }
+  pinMode(J10, OUTPUT);
+  digitalWrite(J10, LOW);
+
 }
 
 void loop() {
@@ -135,7 +140,17 @@ void loop() {
     Serial.print(total, 2);
   }
   Serial.println(F("}}"));
+  if (Serial.available()) {
+    cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+  }
+  if (cmd == "err") {
+    digitalWrite(J10, HIGH);
+  } else {
+    digitalWrite(J10, LOW);
+  }
   delay(200);   // ~5 Hz output
+
 }
 
 /* ============================================================
