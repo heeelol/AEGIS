@@ -31,3 +31,5 @@ bins:
   bin_1_1: pvc_connector
   bin_1_2: copper_rod
   bin_1_0: m12_hex_bolt
+  bin_0_2: te_uncompleted_part
+  bin_0_4: m10_cs_allen_screw
