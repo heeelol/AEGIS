@@ -36,11 +36,12 @@ function binUiState(b, detected, kit) {
 // ── Main poll loop ──────────────────────────────────
 async function poll() {
   try {
-    const [binsRes, layoutRes, statsRes, kitRes] = await Promise.all([
+    const [binsRes, layoutRes, statsRes, kitRes, cycleRes] = await Promise.all([
       fetch("/api/bins"),
       fetch("/api/layout"),
       fetch("/api/stats"),
       fetch("/api/kit"),
+      fetch("/api/cycle"),
     ]);
     if (!binsRes.ok) throw new Error("Backend error");
 
@@ -48,6 +49,7 @@ async function poll() {
     const layout = await layoutRes.json();
     const stats  = await statsRes.json();
     const kit    = kitRes.ok ? await kitRes.json() : {};
+    const cycle  = cycleRes.ok ? await cycleRes.json() : {};
 
     const detectedById = {};
     for (const layer of (layout.layers || [])) {
@@ -55,9 +57,9 @@ async function poll() {
     }
 
     renderBins(bins, layout, detectedById, kit);
-    renderStatus(bins, kit);
     renderAlert(kit);
     renderEmptyBoxModal(kit);
+    renderCycle(cycle);
 
     document.getElementById("last-updated").textContent =
       "Updated " + new Date().toLocaleTimeString();
@@ -89,7 +91,7 @@ function renderBins(bins, layout, detectedById, kit) {
 
     const label = document.createElement("div");
     label.className = "layer-label";
-    label.textContent = "L" + layer.layer;
+    label.textContent = "LAYER " + (layer.layer + 1);   // 1-indexed for operators
     row.appendChild(label);
 
     const grid = document.createElement("div");
@@ -159,89 +161,27 @@ function makeBinTile(binId, b, detected, kit) {
     inner += '<div class="bin-weight">' + (+b.weight).toFixed(1) + ' g</div>';
   }
 
-  if (b.is_active && b.handedness) {
-    const side = b.handedness[0].toLowerCase() === "l" ? "hand-left" : "hand-right";
-    inner += '<div class="hand-flag ' + side + '">✋ ' + b.handedness[0].toUpperCase() + '</div>';
-  }
+  // (Left/right hand chip removed — the bold hand-in halo on the whole tile is
+  // the single, unmistakable "your hand is here" cue.)
 
-  // Manual override only on the active bin (the only one being picked).
-  if (ui === "active") {
-    inner += makeOverrideControls(b.id);
-    box.innerHTML = inner + cross;
-    wireOverrideControls(box, b.id);
-  } else {
-    box.innerHTML = inner + cross;   // `done` is wrong-to-pick → shows the cross; `available` doesn't
-  }
+  // (Manual +/- override controls removed — counts come from the load cells.)
+  box.innerHTML = inner + cross;   // `done` is wrong-to-pick → shows the cross; `available` doesn't
   return box;
 }
 
-// ── Manual override (load-cell stand-in) ────────────
-function makeOverrideControls(binId) {
-  return '<div class="bin-override" data-bin-id="' + binId + '">' +
-    '<button class="ov-btn ov-minus" title="Decrement">−</button>' +
-    '<button class="ov-btn ov-plus" title="Increment">+</button>' +
-    '</div>';
-}
-function wireOverrideControls(box, binId) {
-  const minus = box.querySelector(".ov-minus");
-  const plus  = box.querySelector(".ov-plus");
-  if (minus) minus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, -1); });
-  if (plus)  plus.addEventListener("click", e => { e.stopPropagation(); overridePick(binId, +1); });
-}
-async function overridePick(binId, delta) {
-  try {
-    const res = await fetch("/api/bins/" + encodeURIComponent(binId) + "/pick", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delta }),
-    });
-    if (res.ok) poll();
-  } catch (err) { console.error("Override error:", err); }
-}
-
-// ── Status bar + Complete button ────────────────────
-function renderStatus(bins, kit) {
-  const bar = document.getElementById("statusbar");
-  const msgEl = document.getElementById("status-msg");
-  const completeBtn = document.getElementById("complete-btn");
-
-  const inJob = bins.filter(b => b.using && b.total > 0);
-  const active = kit && kit.active;
-  const complete = kit && kit.state ? !!kit.complete
-    : (inJob.length > 0 && inJob.every(b => b.current === b.total && removedOf(b) === b.total));
-
-  let message, mode;
-  if (!inJob.length) {
-    message = "Waiting for calibration…"; mode = "";
-  } else if (kit && kit.alert) {
-    // empty-kit-box also opens the popup (renderEmptyBoxModal); others also show full-screen (renderAlert).
-    message = kit.alert.message; mode = "action";
-  } else if (complete) {
-    message = "ALL BINS COMPLETE — READY TO CLOSE"; mode = "ready";
-  } else if (active) {
-    const b = bins.find(x => x.id === active);
-    const ret = b ? returnCount(b) : 0;
-    if (ret > 0) { message = "RETURN " + ret + " TO BIN " + active; mode = "action"; }
-    else { message = "PICK " + (b ? b.total - b.current : 0) + " FROM BIN " + active; mode = ""; }
-  } else {
-    message = "PICK FROM ANY BIN"; mode = "";
-  }
-
-  msgEl.textContent = message;
-  bar.className = "statusbar" + (mode ? " " + mode : "");
-  completeBtn.classList.toggle("hidden", !complete);
-}
-
-// ── Full-screen red fault overlay ───────────────────
-// Shown for hard-fault events (overpack-kit, pick-from-wrong-bin,
-// return-to-wrong-bin — all auto-clear once the backend's kit.alert goes
-// back to null). "empty-kit-box" is routed to a popup instead (see
-// renderEmptyBoxModal) — it's a normal between-sets step, not a fault.
-// Minimum time the banner stays visible once shown. A fault that clears
-// within a single poll cycle (e.g. pick-from-wrong-bin, often corrected by
-// the operator almost instantly) would otherwise flash for ~1 poll interval
-// -- too fast to actually notice, even though it was genuinely detected (the
-// bin tile / status bar, simpler non-animated updates, still catch it).
+// ── Full-screen red fault banner ────────────────────
+// One big keyword (mapped from the fault type) with the corrective action as a
+// subtitle, plus the specific bin badge. Covers all four hard faults; each
+// auto-clears once the backend's kit.alert goes back to null.
+const FAULT_KEYWORDS = {
+  "overpack-kit":        "OVERPACK",
+  "pick-from-wrong-bin": "PICKED FROM WRONG BIN",
+  "return-to-wrong-bin": "RETURNED TO WRONG BIN",
+  "out-of-sequence":     "OUT OF SEQUENCE",
+};
+// Minimum time the banner stays visible once shown. A fault corrected within a
+// single poll cycle would otherwise flash for ~1 poll interval — too fast to
+// notice, even though it was genuinely detected.
 const ALERT_MIN_VISIBLE_MS = 900;
 let alertHideAt = 0;
 
@@ -251,14 +191,14 @@ function renderAlert(kit) {
   const alert = kit && kit.alert;
   const binEl = document.getElementById("alert-bin");
   const now = Date.now();
-  if (alert && alert.message && alert.type !== "empty-kit-box") {
-    document.getElementById("alert-msg").textContent = alert.message;
-    // The message already names the bin in a sentence; this badge repeats it
-    // as a large, separate, at-a-glance target so the operator doesn't have
-    // to parse a full sentence to find which physical bin to act on.
+  if (alert && alert.type && FAULT_KEYWORDS[alert.type]) {
+    document.getElementById("alert-keyword").textContent = FAULT_KEYWORDS[alert.type];
+    document.getElementById("alert-sub").textContent = alert.message || "";
+    // Large, separate at-a-glance target for the specific bin (friendly "BIN N").
     if (binEl) {
-      if (alert.bin) {
-        binEl.textContent = alert.bin;
+      const label = alert.bin_label || alert.bin;
+      if (label) {
+        binEl.textContent = label;
         binEl.classList.remove("hidden");
       } else {
         binEl.classList.add("hidden");
@@ -273,31 +213,39 @@ function renderAlert(kit) {
 }
 
 // ── Empty-kitting-box popup ─────────────────────────
-// Between sets, the pipeline blocks counts until the operator confirms (by
-// button, not an automatic weight check) that the box has been emptied.
+// Appears automatically once every bin is green (kit.complete) — no Complete
+// button. A fault takes priority: if the operator makes a mistake before
+// emptying (e.g. one more item), the fault banner shows and this popup hides;
+// correcting it brings the popup back. Confirming empties + advances the set.
 function renderEmptyBoxModal(kit) {
   const modal = document.getElementById("empty-box-modal");
   if (!modal) return;
-  const alert = kit && kit.alert;
-  modal.classList.toggle("hidden", !(alert && alert.type === "empty-kit-box"));
+  const show = kit && kit.complete && !kit.alert;
+  modal.classList.toggle("hidden", !show);
 }
 
-// ── Confirm-kit flow (wired once) ───────────────────
-function initCompleteFlow() {
-  const btn = document.getElementById("complete-btn");
-  const modal = document.getElementById("confirm-modal");
-  btn.addEventListener("click", () => { if (!btn.classList.contains("hidden")) modal.classList.remove("hidden"); });
-  document.getElementById("confirm-cancel").addEventListener("click",
-    () => modal.classList.add("hidden"));
-  document.getElementById("confirm-proceed").addEventListener("click", async () => {
-    // Close the set: the backend blocks counts (empty-kitting-box popup) until
-    // the operator confirms it's been emptied, then re-tares for the next set.
-    try {
-      await fetch("/api/kit/complete", { method: "POST" });
-    } catch (err) { console.error("Complete error:", err); }
-    modal.classList.add("hidden");
-    poll();
-  });
+// ── Sets-remaining progress ─────────────────────────
+// Surfaces the work-order cycle ({set_number, total_sets, complete} from
+// /api/cycle) that the backend already tracks. Answers the operators'
+// unprompted "how many sets left?" — a chip in the header plus a slim bar
+// that fills with completed sets. Both stay hidden until a work order loads.
+function renderCycle(cycle) {
+  const chip = document.getElementById("set-progress");
+  const bar  = document.getElementById("set-progress-bar");
+  const fill = document.getElementById("set-progress-fill");
+  const total = cycle && cycle.total_sets;
+  if (!total) {
+    chip.classList.add("hidden");
+    bar.classList.add("hidden");
+    return;
+  }
+  const n = cycle.set_number || 0;
+  chip.textContent = "SET " + n + " / " + total;
+  chip.classList.remove("hidden");
+  // Fill = sets fully finished (n-1 in progress, or all when the cycle is done).
+  const doneSets = cycle.complete ? total : Math.max(0, n - 1);
+  fill.style.width = (100 * doneSets / total) + "%";
+  bar.classList.remove("hidden");
 }
 
 // ── Confirm-empty flow (wired once) ─────────────────
@@ -314,7 +262,6 @@ function initEmptyBoxFlow() {
 }
 
 // ── Start ───────────────────────────────────────────
-initCompleteFlow();
 initEmptyBoxFlow();
 poll();
 setInterval(poll, POLL_INTERVAL);

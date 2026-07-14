@@ -59,7 +59,10 @@ def test_derive_counts_clamps_and_ignores_unmapped(tmp_path):
 def _pipeline_with(state, reader, tracker):
     p = object.__new__(Pipeline)        # bypass __init__ (no camera/config)
     p._state, p._loadcells, p._inventory = state, reader, tracker
-    
+    # Buzzer attrs the real __init__ would set — the fault-buzzer/silence paths
+    # touch them even when no fault fires (bypassed __init__ leaves them unset).
+    p._buzzer, p._buzzer_sustain, p._prev_fault = None, False, False
+
     units = tracker.units()
     targets = {b: 5 for b in units}
     # activation_confirm_s=0: this test exercises a single _apply_loadcell_counts()

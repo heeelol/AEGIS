@@ -94,7 +94,16 @@ class PipelineState:
         self._active_bin: Optional[str] = None
         self._done: set[str] = set()
 
+        # Friendly display names ("BIN 1"…"BIN 9") keyed by canonical bin id,
+        # set once by the pipeline. Empty → get_bins falls back to the raw id.
+        self._labels: dict[str, str] = {}
+
     # ── Writers (called by the pipeline loop) ────────────────
+
+    def set_labels(self, labels: dict[str, str]) -> None:
+        """Install the canonical-id → friendly-name map (e.g. 'bin_0_0' → 'BIN 1')."""
+        with self._lock:
+            self._labels = dict(labels or {})
 
     def update_bins(self, geofences: dict, active_bin_ids: set[str] | None = None) -> None:
         """Update bin map from detected geofences."""
@@ -262,7 +271,7 @@ class PipelineState:
                 layer, col = self._parse_bin_id(b.bin_id)
                 result.append({
                     "id": b.bin_id,
-                    "label": b.label,
+                    "label": self._labels.get(b.bin_id, b.label),
                     "layer": layer,
                     "col": col,
                     "current": b.pick_count,           # placed (verified in box)

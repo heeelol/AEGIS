@@ -185,6 +185,8 @@ class Pipeline:
         self._overlay: Optional[OverlayUI] = None
         self._loadcells: Optional[LoadCellReader] = None
         self._buzzer: Optional[Buzzer] = None     # fault buzzer on the MIC DIO
+        self._prev_fault: bool = False            # edge-detect FAULT for buzzer cues
+        self._buzzer_sustain: bool = True         # keep pulsing until corrected
         self._inventory = None                    # InventoryTracker (built with load cells)
         self._placement: Optional[PlacementTracker] = None  # kitting-box placement counting
         self._cycle: Optional[CycleManager] = None           # work-order cycle of sets
@@ -437,7 +439,11 @@ class Pipeline:
         # Fault buzzer on the MIC's DIO. Started here (before any fault can
         # occur) so it's driven silent the instant the pipeline comes up,
         # regardless of the DO line's power-on default.
-        self._buzzer = Buzzer(sensing_cfg.get("buzzer", {})).start()
+        buzzer_cfg = sensing_cfg.get("buzzer", {})
+        self._buzzer = Buzzer(buzzer_cfg).start()
+        # True (default): after the error cue, keep pulsing until the fault is
+        # corrected. False: announce the error once, then stay silent.
+        self._buzzer_sustain = bool(buzzer_cfg.get("sustain_error", True))
 
         from integration.src.sensing import InventoryTracker
         self._inventory = InventoryTracker()        # loads config/inventory.yaml
@@ -449,6 +455,11 @@ class Pipeline:
         units = self._inventory.units()
         box_cfg = lc_cfg.get("kit_box", {}) or {}
         bom_targets = {b: self._target_for(b) for b in units}
+        # Friendly bin names ("BIN 1"…"BIN 9"): one shared map so the grid tiles
+        # (via PipelineState) and the fault messages (via PlacementTracker) always
+        # agree. Numbered top row first, then bottom, left→right.
+        self._bin_labels = self._make_bin_labels(units)
+        self._state.set_labels(self._bin_labels)
         self._placement = PlacementTracker(
             units, bom_targets,
             box_cfg.get("box_id", "kit_box"),
@@ -463,6 +474,7 @@ class Pipeline:
             count_tolerance_g=box_cfg.get("count_tolerance_g"),
             fault_settle_s=box_cfg.get("fault_settle_s", 2.5),
             activation_confirm_s=box_cfg.get("activation_confirm_s", 0.4),
+            labels=self._bin_labels,
         )
         boot_weights = self._wait_for_loadcell_data()
         self._placement.tare(boot_weights)  # software zero at boot
@@ -527,6 +539,18 @@ class Pipeline:
         self._ensure_cycle()
         return int(self._cycle.current_targets().get(bin_id, 0))
 
+    @staticmethod
+    def _make_bin_labels(bin_ids) -> dict[str, str]:
+        """Map canonical ids ('bin_{row}_{col}') to sequential 'BIN N' names,
+        numbered by (row, col): top row 1..6, bottom row 7..9."""
+        def key(bid):
+            parts = bid.split("_")
+            try:
+                return (int(parts[-2]), int(parts[-1]))
+            except (ValueError, IndexError):
+                return (0, 0)
+        return {bid: f"BIN {i + 1}" for i, bid in enumerate(sorted(bin_ids, key=key))}
+
     # ── Cycle / set sequencing ───────────────────────────────
     def _ensure_cycle(self) -> None:
         if self._cycle is None:
@@ -536,16 +560,6 @@ class Pipeline:
     def _apply_set_to_placement(self) -> None:
         if self._placement is not None:
             self._placement.set_targets(self._cycle.current_targets())
-
-    def _advance_set(self, weights: dict) -> None:
-        """Operator confirmed the current set: advance, re-target, and wait to empty."""
-        self._ensure_cycle()
-        just_done = self._cycle.advance()
-        self._apply_work_order()            # push next set's targets + cycle snapshot
-        self._apply_set_to_placement()
-        self._waiting_to_empty = True
-        logger.info("Set confirmed -> set %d/%d%s (waiting for box to be emptied)", self._cycle.set_number,
-                    self._cycle.total_sets, "  (CYCLE COMPLETE)" if just_done else "")
 
     def _restart_cycle(self, weights: dict) -> None:
         """Operator started a new cycle from the cycle-complete popup."""
@@ -560,21 +574,30 @@ class Pipeline:
         logger.info("Cycle restarted -> set 1/%d", self._cycle.total_sets)
 
     def _confirm_box_emptied(self, weights: dict) -> None:
-        """Operator confirmed (via the UI popup) that the kitting box has been
-        physically emptied: tare and unblock the next set. No automatic weight
-        check — the operator verifies by hand."""
+        """Operator confirmed (via the popup that appears automatically once all
+        bins are green) that the kitting box is emptied: advance to the next set,
+        re-target, and tare — all in one step. No automatic weight check; the
+        operator verifies by hand. (This replaces the old two-step Complete →
+        Confirm-empty flow now that the completion button is gone.)"""
+        self._ensure_cycle()
+        just_done = self._cycle.advance()
+        self._apply_work_order()            # push next set's targets + cycle snapshot
+        self._apply_set_to_placement()
         if self._placement is not None:
             self._placement.tare(weights)
             self._empty_box_raw = float(weights.get("kit_box", 0.0))
         self._waiting_to_empty = False
-        logger.info("Operator confirmed kitting box emptied -> next set activated and tared.")
+        logger.info("Box emptied + confirmed -> set %d/%d%s (tared, next set active)",
+                    self._cycle.set_number, self._cycle.total_sets,
+                    "  (CYCLE COMPLETE)" if just_done else "")
 
     def _service_cycle_requests(self) -> None:
-        """Handle operator set-complete / cycle-restart / empty-confirmed each
-        loop (with or without load cells)."""
-        if self._state.consume_complete_request():
-            w = self._loadcells.get_weights() if self._loadcells is not None else {}
-            self._advance_set(w)
+        """Handle operator cycle-restart / empty-confirmed each loop (with or
+        without load cells). Set completion no longer has its own request: the
+        empty-box confirmation advances the set (see _confirm_box_emptied)."""
+        # Drain any stale complete request (the Complete button was removed);
+        # completion now flows through the empty-box confirmation instead.
+        self._state.consume_complete_request()
         if self._state.consume_restart_request():
             w = self._loadcells.get_weights() if self._loadcells is not None else {}
             self._restart_cycle(w)
@@ -593,42 +616,27 @@ class Pipeline:
         starting the next set.
         """
         if self._loadcells is None or self._placement is None:
-            self._set_buzzer(False)
+            self._silence_buzzer()
             return
         if not self._loadcells.is_connected():
             # A dropped link produces no new faults to announce; never leave
             # the buzzer stuck on when data stops.
-            self._set_buzzer(False)
+            self._silence_buzzer()
             return
         weights = self._loadcells.get_weights()
 
-        # Waiting on the operator to physically empty the box and confirm via
-        # the UI popup — counts stay blocked until then. No automatic weight check.
-        if getattr(self, "_waiting_to_empty", False):
-            raw_box = float(weights.get("kit_box", 0.0))
-            empty_raw = getattr(self, "_empty_box_raw", 0.0)
-            self._state.update_kit({
-                "placed": {},
-                "removed": {},
-                "targets": {},
-                "active": None,
-                "done": [],
-                "box_grams": round(raw_box - empty_raw, 1),
-                "complete": False,
-                "state": "WAITING_EMPTY",
-                "overpick": {},
-                "alert": {"type": "empty-kit-box",
-                          "message": "EMPTY THE KITTING BOX, THEN CONFIRM TO START THE NEXT SET"},
-                "box_id": self._placement.box_id,
-            })
-            self._set_buzzer(False)  # empty-box prompt is not a fault
-            return
+        # NOTE: the tracker keeps running through the "all green, awaiting empty"
+        # phase — no short-circuit. The empty-box popup is driven purely by
+        # kit.complete in the UI, so a mistake made before emptying (e.g. one
+        # more item placed) still faults, hides the popup, and beeps; correcting
+        # it brings the popup back. The empty confirmation (confirm-empty)
+        # advances the set and re-tares in one step.
 
         kit = self._placement.update(weights)
-        # Buzzer sounds for exactly the three FSM faults (overpack /
-        # pick-from-wrong-bin / return-to-wrong-bin) and goes quiet the moment
-        # the operator corrects the error.
-        self._set_buzzer(kit.state == "FAULT")
+        # Buzzer cues for exactly the three FSM faults (overpack /
+        # pick-from-wrong-bin / return-to-wrong-bin): an error cue on entering
+        # FAULT, a 'resolved' cue the moment the operator corrects it.
+        self._update_fault_buzzer(kit.state)
         for bin_id, count in kit.placed.items():
             self._state.set_pick_count(bin_id, count)
         self._state.update_kit({
@@ -645,10 +653,44 @@ class Pipeline:
             "box_id": self._placement.box_id,
         })
 
-    def _set_buzzer(self, on: bool) -> None:
-        """Drive the fault buzzer; safe no-op when the buzzer isn't present."""
+    def _silence_buzzer(self) -> None:
+        """Stop the buzzer with no 'resolved' cue — for non-fault silence paths
+        (link dropped, empty-box prompt, load cells absent). Resets the fault
+        edge so a still-present fault re-announces when live updates resume."""
+        self._prev_fault = False
         if self._buzzer is not None:
-            self._buzzer.set_alarm(on)
+            self._buzzer.set_alarm(False)
+
+    def _update_fault_buzzer(self, kit_state: str) -> None:
+        """Edge-driven fault cues from a live kit update.
+
+        Entering FAULT triggers the error sound; leaving FAULT triggers the
+        'resolved' sound. Two independent buzzers are supported and either may
+        be absent:
+          * ESP32 buzzer — firmware ``err`` / ``ring`` tunes sent over the
+            load-cell serial link (the buzzer wired to the ESP32).
+          * DIO buzzer — an active buzzer on the MIC's DIO (``buzzer.py``).
+        Cues fire only on the transition, so a persisting fault doesn't
+        re-trigger every frame.
+        """
+        fault = (kit_state == "FAULT")
+        if fault and not self._prev_fault:
+            self._buzz_esp("err")                  # ESP32 firmware error tune
+            if self._buzzer is not None:
+                self._buzzer.play_error()          # DIO buzzer, if wired
+                if self._buzzer_sustain:
+                    self._buzzer.set_alarm(True)
+        elif not fault and self._prev_fault:
+            self._buzz_esp("ring")                 # ESP32 firmware correction tune
+            if self._buzzer is not None:
+                self._buzzer.set_alarm(False)
+                self._buzzer.play_ok()
+        self._prev_fault = fault
+
+    def _buzz_esp(self, cmd: str) -> None:
+        """Trigger the ESP32-side buzzer tune ('err'/'ring') over the serial link."""
+        if self._loadcells is not None:
+            self._loadcells.send_command(cmd)
 
     def _load_hand_tracker(self) -> None:
         ht_cfg = self._config.get("hand_tracker", {})

@@ -54,6 +54,26 @@ class GpioBackend(Protocol):
         ...
 
 
+def _parse_cue(spec, default):
+    """Normalise a cue spec into a list of ``(on_s, off_s)`` float pairs.
+
+    A cue is a one-shot beep pattern. Config may override it as a list of
+    ``[on, off]`` pairs in seconds; anything malformed falls back to
+    ``default`` so a bad config never breaks the buzzer.
+    """
+    if not spec:
+        return list(default)
+    try:
+        out = []
+        for step in spec:
+            on_s, off_s = float(step[0]), float(step[1])
+            out.append((max(0.0, on_s), max(0.0, off_s)))
+        return out or list(default)
+    except (TypeError, ValueError, IndexError):
+        logger.warning("Buzzer cue spec %r malformed — using default", spec)
+        return list(default)
+
+
 # ── GPIO backends ────────────────────────────────────────────────────────
 
 def _open_backend(gpiochip: str, line: int) -> Optional[GpioBackend]:
@@ -157,10 +177,21 @@ class Buzzer:
         # Half-period of the on/off pulse. Guard against 0/negative from config.
         self._half_period = 1.0 / (2.0 * hz) if hz > 0 else 0.25
 
+        # One-shot cue patterns — a list of (on_s, off_s) beeps the pulser plays
+        # once. Distinct rhythms let the operator tell an error from a correction
+        # by ear on a single on/off buzzer (no tones). Overridable from config.
+        #   error: three firm beeps  ·  ok: two quick chirps
+        self._error_cue = _parse_cue(cfg.get("error_cue"),
+                                     [(0.16, 0.10), (0.16, 0.10), (0.16, 0.10)])
+        self._ok_cue = _parse_cue(cfg.get("ok_cue"),
+                                  [(0.07, 0.05), (0.07, 0.0)])
+
         self._backend = backend                 # may be injected (tests) or None
         self._alarm = threading.Event()         # set = fault active (pulse)
         self._stop = threading.Event()          # set = shut the thread down
-        self._wake = threading.Event()          # alarm-state changed → re-evaluate
+        self._wake = threading.Event()          # alarm/cue changed → re-evaluate
+        self._lock = threading.Lock()           # guards the one-shot cue slot
+        self._cue: Optional[list] = None        # queued one-shot pattern, if any
         self._thread: Optional[threading.Thread] = None
         self._started = False
 
@@ -217,12 +248,58 @@ class Buzzer:
             self._alarm.clear()
             self._wake.set()
 
+    def play(self, pattern) -> None:
+        """Queue a one-shot beep pattern (list of ``(on_s, off_s)``), played once.
+
+        The pulser plays the cue ahead of the sustained alarm, then resumes the
+        alarm if it's still set. A newer cue replaces any not-yet-played one.
+        No-op if the buzzer never started or the pattern is empty.
+        """
+        if not self._started or not pattern:
+            return
+        with self._lock:
+            self._cue = list(pattern)
+        self._wake.set()
+
+    def play_error(self) -> None:
+        """Play the distinct 'error occurred' cue once."""
+        self.play(self._error_cue)
+
+    def play_ok(self) -> None:
+        """Play the short 'error resolved' cue once."""
+        self.play(self._ok_cue)
+
+    def _take_cue(self) -> Optional[list]:
+        """Atomically pull the queued one-shot cue, if any."""
+        with self._lock:
+            cue, self._cue = self._cue, None
+        return cue
+
+    def _play_cue(self, cue) -> None:
+        """Play a one-shot beep sequence to completion (only stop interrupts)."""
+        for on_s, off_s in cue:
+            if self._stop.is_set():
+                break
+            if on_s > 0:
+                self._drive(True)
+                if self._stop.wait(on_s):
+                    break
+            self._drive(False)
+            if off_s > 0 and self._stop.wait(off_s):
+                break
+        self._drive(False)
+
     def _run(self) -> None:
-        """Pulser loop: toggle while alarm is set, hold silent while it isn't."""
+        """Pulser loop: play a queued one-shot cue first, then pulse while the
+        alarm is set, else hold silent."""
         while not self._stop.is_set():
+            cue = self._take_cue()
+            if cue is not None:
+                self._play_cue(cue)
+                continue
             if self._alarm.is_set():
                 # Pulse: on for a half-period, off for a half-period. A state
-                # change (alarm cleared / stop) interrupts the wait promptly.
+                # change (alarm cleared / new cue / stop) interrupts promptly.
                 self._drive(True)
                 if self._wait(self._half_period):
                     continue
@@ -231,7 +308,7 @@ class Buzzer:
                     continue
             else:
                 self._drive(False)
-                # Sleep until the alarm state changes or we're told to stop.
+                # Sleep until something changes (cue queued, alarm, or stop).
                 self._wake.wait()
                 self._wake.clear()
         self._drive(False)  # leave silent on the way out

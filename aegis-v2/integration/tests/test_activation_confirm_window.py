@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # integration/
 from src.sensing.placement import PlacementTracker
 
 UNITS = {"bin_a": 16.6, "bin_b": 16.6}
-TARGETS = {"bin_a": 0, "bin_b": 0}
+# Both in the BOM (target > 0) so they can activate — only in-kit bins do.
+TARGETS = {"bin_a": 5, "bin_b": 5}
 BOX = "kit_box"
 
 

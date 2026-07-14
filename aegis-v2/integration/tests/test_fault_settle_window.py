@@ -22,7 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # integration/
 from src.sensing.placement import PlacementTracker
 
 UNITS = {"bin_a": 16.6, "bin_b": 16.6}
-TARGETS = {"bin_a": 0, "bin_b": 0}
+# bin_a must be in the BOM (target > 0) to activate and hold; bin_b then
+# receives the matching item as the wrong destination (return-to-wrong-bin).
+TARGETS = {"bin_a": 5, "bin_b": 5}
 BOX = "kit_box"
 
 

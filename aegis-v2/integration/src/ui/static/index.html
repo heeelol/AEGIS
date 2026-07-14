@@ -17,10 +17,14 @@
         <span class="subtitle">Operator · Kitting</span>
       </div>
       <div class="header-right">
+        <div id="set-progress" class="stat-chip set-chip hidden">SET — / —</div>
         <div id="fps-display" class="stat-chip">— FPS</div>
         <div id="last-updated" class="stat-chip link">Linking…</div>
       </div>
     </header>
+
+    <!-- Sets-remaining progress bar: fills as completed sets accrue. -->
+    <div id="set-progress-bar" class="set-progress-bar hidden"><span id="set-progress-fill"></span></div>
 
     <!-- Bins (the whole story) -->
     <div class="workspace">
@@ -30,39 +34,25 @@
       </section>
     </div>
 
-    <!-- Status bar: one instruction + the Complete button (appears when ready) -->
-    <div id="statusbar" class="statusbar">
-      <span class="status-dot" id="status-dot"></span>
-      <span id="status-msg">Waiting for calibration…</span>
-      <button id="complete-btn" class="complete-btn hidden">Complete kit</button>
-    </div>
-
   </div>
 
-  <!-- Full-screen red fault overlay: overpack-kit, pick-from-wrong-bin,
-       return-to-wrong-bin -->
+  <!-- Full-screen red fault banner: a big keyword (from the fault type) + the
+       corrective action as a subtitle, plus the specific bin to act on. Covers
+       overpack-kit, pick-from-wrong-bin, return-to-wrong-bin, out-of-sequence. -->
   <div id="alert-overlay" class="alert-overlay hidden">
     <div class="alert-box">
       <div class="alert-icon">⚠</div>
-      <div id="alert-msg" class="alert-text"></div>
+      <div class="alert-main">
+        <div id="alert-keyword" class="alert-keyword"></div>
+        <div id="alert-sub" class="alert-sub"></div>
+      </div>
       <div id="alert-bin" class="alert-bin hidden"></div>
     </div>
   </div>
 
-  <!-- Complete-kit confirmation -->
-  <div id="confirm-modal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-title">Complete this kit?</div>
-      <div class="modal-body">Every bin is verified. Closing the kit logs it and clears the station for the next one.</div>
-      <div class="modal-actions">
-        <button id="confirm-cancel" class="modal-btn cancel">Cancel</button>
-        <button id="confirm-proceed" class="modal-btn proceed">Proceed</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Empty-kitting-box confirmation: shown between sets instead of a full-screen
-       alert. Operator empties the box by hand and confirms — no automatic weight check. -->
+  <!-- Empty-kitting-box confirmation: shown automatically once every bin is green
+       (no separate Complete button). Operator empties the box by hand and confirms —
+       no automatic weight check. -->
   <div id="empty-box-modal" class="modal hidden">
     <div class="modal-card">
       <div class="modal-title">Empty the kitting box</div>

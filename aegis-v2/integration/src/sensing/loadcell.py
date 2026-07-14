@@ -74,6 +74,7 @@ class LoadCellReader:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        self._write_lock = threading.Lock()     # serialises host→ESP32 commands
         self._weights: dict[str, float] = {}
         self._last_rx: float = 0.0
 
@@ -173,6 +174,23 @@ class LoadCellReader:
         """Latest weight per bin in grams, keyed by ``bin_{row}_{col}``."""
         with self._lock:
             return dict(self._weights)
+
+    def send_command(self, cmd: str) -> None:
+        """Send a newline-terminated command to the ESP32 over the same serial
+        link — e.g. ``"err"`` / ``"ring"`` to trigger the firmware buzzer tunes.
+
+        Safe to call from the pipeline thread while the daemon reads: pyserial
+        allows concurrent read/write and a lock serialises writers. No-op when
+        the port isn't open; any write error is logged and swallowed so the
+        buzzer can never take the pipeline down.
+        """
+        if self._serial is None:
+            return
+        try:
+            with self._write_lock:
+                self._serial.write((cmd + "\n").encode("ascii"))
+        except Exception as exc:  # dropped link, etc. — never fatal
+            logger.warning("Load-cell serial write (%r) failed: %s", cmd, exc)
 
     def get_layout(self) -> LayerLayout:
         """Bin layout inferred from the bin ids currently reporting weight.

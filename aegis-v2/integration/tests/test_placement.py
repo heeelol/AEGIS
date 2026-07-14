@@ -77,8 +77,9 @@ def test_overpack_triggers_fault_and_clears():
     t = tracker()
     s = settle(t, w(b12=-4 * 67.1, box=4 * 67.1))
     assert s.state == "FAULT" and s.alert["type"] == "overpack-kit" and s.alert["bin"] == "bin_1_2"
-    # message names the specific bin to return the excess to, not just "the kit"
-    assert s.alert["message"] == "OVER-PACKED — REMOVE 1 FROM KIT, RETURN TO bin_1_2"
+    # message (corrective-action subtitle; the UI adds the "OVERPACK" keyword)
+    # names the specific bin to return the excess to, not just "the kit"
+    assert s.alert["message"] == "Remove 1 from kit, return to bin_1_2"
     # correct it: return the extra item to ITS BIN (both removed and box drop
     # together) -> fault auto-clears and the bin completes cleanly. Merely
     # lifting the item out of the box without a bin gaining it back doesn't
@@ -107,17 +108,51 @@ def test_overpack_blocks_completion_while_faulted():
     assert s.alert["type"] == "overpack-kit" and "bin_0_4" not in s.done
 
 
-def test_pick_from_wrong_bin_triggers_fault_and_clears():
+def test_out_of_sequence_triggers_fault_and_clears():
+    # bin_0_5 IS in this kit (target 3) but is locked while bin_0_4 is active.
+    # Picking from it is out-of-sequence, NOT "wrong bin" — it's a required bin,
+    # just not right now.
     t = tracker()
     settle(t, w(b04=-3.6))                       # bin_0_4 active
-    s = settle(t, w(b04=-3.6, b05=-16.6))        # touch a locked bin
-    assert (s.state == "FAULT" and s.alert["type"] == "pick-from-wrong-bin"
+    s = settle(t, w(b04=-3.6, b05=-16.6))        # pick from a locked in-BOM bin
+    assert (s.state == "FAULT" and s.alert["type"] == "out-of-sequence"
             and s.alert["bin"] == "bin_0_5")
-    # message tells the operator to put it back where it came from
-    assert s.alert["message"] == "WRONG BIN — RETURN ITEM TO bin_0_5"
+    # subtitle: how many to put back, and to finish the active bin first
+    assert s.alert["message"] == "Return 1 to bin_0_5 — finish bin_0_4 first"
+    assert s.alert["count"] == 1
     # correct it: return the item to bin_0_5 -> fault auto-clears
     s = settle(t, w(b04=-3.6, b05=0.0))
     assert s.alert is None and s.state == "PICKING"
+
+
+def test_pick_from_completed_green_bin_is_wrong_bin_not_out_of_sequence():
+    # Once a bin is finished (green/done) it must never be picked from again —
+    # that's a real WRONG BIN, not a timing/out-of-sequence slip.
+    t = tracker()
+    s = settle(t, w(b04=-3 * 3.6, box=3 * 3.6))   # complete bin_0_4 (3/3) -> done
+    assert s.done == ["bin_0_4"] and s.active is None
+    s = settle(t, w(b04=-4 * 3.6, box=3 * 3.6))   # take a 4th from the done bin
+    assert s.state == "FAULT" and s.alert["type"] == "pick-from-wrong-bin"
+    assert s.alert["bin"] == "bin_0_4" and s.alert["count"] == 1
+    assert s.alert["message"] == "Return 1 to bin_0_4"
+
+
+def test_pick_from_not_in_bom_bin_always_faults_and_never_activates():
+    # A bin NOT in this kit (target 0) must always error when picked from — even
+    # as the very first action, with nothing active — and must never silently
+    # become the active bin (which used to swallow the first wrong pick).
+    units = {"bin_0_4": 3.6, "bin_0_5": 16.6}
+    targets = {"bin_0_4": 3, "bin_0_5": 0}       # bin_0_5 not in this kit
+    t = PlacementTracker(units, targets, BOX, ema_alpha=0.4, hysteresis=0.25,
+                         box_step_tolerance_g=1.8, activation_frac=0.5,
+                         fault_settle_s=0, activation_confirm_s=0)
+    s = settle(t, {"bin_0_4": 0.0, "bin_0_5": -16.6, "kit_box": 0.0})  # first action
+    assert s.state == "FAULT" and s.alert["type"] == "pick-from-wrong-bin"
+    assert s.alert["bin"] == "bin_0_5" and s.alert["count"] == 1
+    assert s.active is None                       # never activated the wrong bin
+    # correct it: return the item -> fault clears, still idle
+    s = settle(t, {"bin_0_4": 0.0, "bin_0_5": 0.0, "kit_box": 0.0})
+    assert s.alert is None and s.active is None
 
 
 def test_return_to_wrong_bin_triggers_fault_and_clears():
@@ -126,10 +161,12 @@ def test_return_to_wrong_bin_triggers_fault_and_clears():
     s = settle(t, w(b04=-3.6, b05=+20.0))         # item dropped INTO a locked bin
     assert (s.state == "FAULT" and s.alert["type"] == "return-to-wrong-bin"
             and s.alert["bin"] == "bin_0_5")
-    # message says REMOVE (not "return to", which would misread as instructing
-    # the operator to put it there — it's already there, wrongly) and names
-    # bin_0_4 (currently active) as where it actually belongs
-    assert s.alert["message"] == "WRONG BIN — REMOVE ITEM FROM bin_0_5, BELONGS IN bin_0_4"
+    # subtitle says REMOVE (not "return to", which would misread as instructing
+    # the operator to put it there — it's already there, wrongly), how many
+    # (5 units of the held item's weight landed here), and names bin_0_4
+    # (currently active) as where it actually belongs
+    assert s.alert["message"] == "Remove 5 from bin_0_5, belongs in bin_0_4"
+    assert s.alert["count"] == 5
     # correct it: take the item back out of bin_0_5 -> fault auto-clears
     s = settle(t, w(b04=-3.6, b05=0.0))
     assert s.alert is None and s.state == "PICKING"

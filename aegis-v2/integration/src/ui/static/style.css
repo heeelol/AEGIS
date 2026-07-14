@@ -96,6 +96,25 @@ h1 .mark { color: var(--hand); }
   background: var(--hand); box-shadow: 0 0 8px var(--hand);
 }
 
+/* Sets-remaining chip: the "how many sets left?" glance operators asked for.
+   Bigger + brighter than the ambient FPS/link chips since it's task-relevant. */
+.set-chip {
+  color: var(--ink); font-weight: 700; font-size: 15px; letter-spacing: 1.5px;
+  background: var(--steel-hi); border-color: var(--rule-hi);
+}
+
+/* Slim progress bar under the header (Royce's "task bar to show remaining
+   sets"). Fills with completed sets; hidden until a work order is loaded. */
+.set-progress-bar {
+  flex: 0 0 auto; height: 6px; width: 100%;
+  background: var(--void); border-bottom: 1px solid var(--rule); overflow: hidden;
+}
+.set-progress-bar span {
+  display: block; height: 100%; width: 0;
+  background: var(--hand); box-shadow: 0 0 8px var(--hand);
+  transition: width 0.3s ease;
+}
+
 /* ── Workspace: bins (full width) ─────────────────── */
 
 .workspace {
@@ -119,9 +138,10 @@ h2 {
 .bin-layer { flex: 1 1 0; display: flex; align-items: stretch; gap: 14px; min-height: 0; }
 
 .layer-label {
-  flex: 0 0 44px;
+  flex: 0 0 74px;
   display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: clamp(12px, 1.8vh, 16px); font-weight: 700;
+  font-family: var(--mono); font-size: clamp(11px, 1.6vh, 15px); font-weight: 700;
+  letter-spacing: 0.5px; text-align: center;
   color: var(--ink-dim);
   background: var(--void); border: 1px solid var(--rule); border-radius: 9px;
 }
@@ -143,7 +163,7 @@ h2 {
 }
 
 .bin-id {
-  font-family: var(--mono); font-size: clamp(12px, 1.9vh, 18px); letter-spacing: 1px;
+  font-family: var(--mono); font-size: clamp(15px, 2.3vh, 22px); letter-spacing: 1px;
   color: var(--ink-dim);
 }
 .quantity {
@@ -198,13 +218,33 @@ h2 {
 .bin-lock { font-size: 22px; opacity: 0.7; margin: 4px 0; }
 .quantity.muted { opacity: 0.5; }
 
-/* Hand-in-bin: glow in the bin's own current colour so it's obvious which bin
-   the operator's hand is in. A locked bin lifts its dim a little but stays muted. */
-.bin.hand-in            { box-shadow: 0 0 0 3px rgba(255,255,255,0.85), 0 0 16px rgba(255,255,255,0.35); }
-.bin.available.hand-in  { box-shadow: 0 0 0 3px #D5DCDA, 0 0 16px rgba(213,220,218,0.6); }
-.bin.active.hand-in     { box-shadow: 0 0 0 3px var(--hand), 0 0 18px var(--hand); }
-.bin.done.hand-in       { box-shadow: 0 0 0 3px var(--green), 0 0 16px rgba(43,212,110,0.55); }
-.bin.locked.hand-in     { opacity: 0.7; box-shadow: 0 0 0 3px var(--rule); }
+/* Hand-in-bin: the single loudest cue on the board. ONE bold, consistent teal
+   ring + halo (same treatment whatever the bin's state) so it is unmistakable at
+   a glance which bin the operator's hand is in right now. Lifts above neighbours
+   and pulses so the eye is pulled straight to it. */
+.bin.hand-in {
+  border-color: var(--hand) !important;
+  z-index: 5;
+  transform: scale(1.05);
+  opacity: 1 !important;                 /* a hand in a locked/dim bin still shows loud */
+  animation: hand-halo 0.85s ease-in-out infinite;
+}
+@keyframes hand-halo {
+  0%, 100% { box-shadow: 0 0 0 5px var(--hand), 0 0 26px 6px rgba(70, 224, 192, 0.60); }
+  50%      { box-shadow: 0 0 0 8px var(--hand), 0 0 46px 14px rgba(70, 224, 192, 0.95); }
+}
+/* ...but RED when the hand is over a bin it must NOT pick from (not in this kit,
+   locked while another bin is active, or already done). Same loud halo, red — an
+   instant "wrong place" signal, paired with the ✗ overlay. Wins over the teal rule
+   above by specificity (.bin.hand-in.wrong = 3 classes). */
+.bin.hand-in.wrong {
+  border-color: var(--alert) !important;
+  animation: hand-halo-wrong 0.85s ease-in-out infinite;
+}
+@keyframes hand-halo-wrong {
+  0%, 100% { box-shadow: 0 0 0 5px var(--alert), 0 0 26px 6px rgba(255, 59, 48, 0.60); }
+  50%      { box-shadow: 0 0 0 8px var(--alert), 0 0 46px 14px rgba(255, 59, 48, 0.95); }
+}
 
 @keyframes bin-pulse {
   0%, 100% { box-shadow: 0 0 0 2px var(--hand); }
@@ -212,25 +252,6 @@ h2 {
 }
 
 .bin.missing { background: var(--void); border: 1px dashed var(--rule-hi); }
-
-/* ── Hand-in-bin indicator ────────────────────────── */
-
-.hand-flag {
-  position: absolute; top: 8px;
-  display: flex; align-items: center; gap: 3px;
-  font-family: var(--mono); font-size: clamp(10px, 1.5vh, 15px); font-weight: 700; letter-spacing: 0.5px;
-  padding: 3px 8px; border-radius: 6px;
-  /* default (dark fills): light chip */
-  background: rgba(70, 224, 192, 0.16); color: var(--hand); border: 1px solid var(--hand);
-}
-/* Sit on the side the hand should approach from. */
-.hand-flag.hand-left  { left: 8px; }
-.hand-flag.hand-right { right: 8px; }
-/* On white-filled tiles, flip to a dark chip so it contrasts. */
-.bin.incomplete .hand-flag,
-.bin.overpack .hand-flag {
-  background: var(--ink-dark); color: var(--white); border-color: var(--ink-dark);
-}
 
 /* ── Wrong-bin cross overlay ──────────────────────── */
 
@@ -244,63 +265,11 @@ h2 {
 .cross::before { transform: translate(-50%, -50%) rotate(45deg); }
 .cross::after  { transform: translate(-50%, -50%) rotate(-45deg); }
 
-/* ── Manual override (load-cell stand-in) ─────────── */
+/* (Manual +/- override buttons removed — counts come from the load cells.) */
 
-.bin-override {
-  position: absolute; bottom: 7px; left: 7px; right: 7px;
-  display: flex; justify-content: space-between; gap: 6px;
-  opacity: 0; transition: opacity 0.15s ease;
-}
-.bin:hover .bin-override,
-.bin:focus-within .bin-override { opacity: 1; }
-
-.ov-btn {
-  flex: 1; font-family: var(--mono);
-  border: 1px solid var(--rule-hi);
-  background: rgba(0,0,0,0.45); color: var(--ink);
-  font-size: 15px; font-weight: 700; line-height: 1;
-  padding: 3px 0; border-radius: 5px; cursor: pointer; user-select: none;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.ov-btn:hover { background: rgba(0,0,0,0.7); border-color: var(--hand); }
-.ov-btn:active { transform: scale(0.95); }
-.bin.incomplete .ov-btn,
-.bin.overpack .ov-btn { background: rgba(20,32,30,0.10); color: var(--ink-dark); border-color: rgba(20,32,30,0.18); }
-.bin.incomplete .ov-btn:hover,
-.bin.overpack .ov-btn:hover { background: rgba(20,32,30,0.22); }
-
-/* ── Status bar + Complete button ─────────────────── */
-
-.statusbar {
-  flex: 0 0 auto;
-  display: flex; align-items: center; gap: 14px;
-  padding: clamp(12px, 2vh, 22px) 22px;
-  border-top: 1px solid var(--rule);
-  background: var(--steel);
-  font-family: var(--mono); font-size: clamp(14px, 2.3vh, 24px); letter-spacing: 0.5px;
-  color: var(--ink);
-}
-.status-dot {
-  width: 11px; height: 11px; border-radius: 50%;
-  background: var(--ink-faint); flex: 0 0 auto;
-}
-#status-msg { flex: 1; }
-.statusbar.ready  .status-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
-.statusbar.action .status-dot { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
-.statusbar.action #status-msg { color: var(--alert); }
-.statusbar.ready  #status-msg { color: var(--green); }
-
-.complete-btn {
-  flex: 0 0 auto;
-  min-height: 44px; padding: 0 22px;
-  font-family: var(--sans); font-size: 13px; font-weight: 700;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  border-radius: 9px; cursor: pointer;
-  background: var(--green); color: var(--void); border: 1px solid var(--green);
-  animation: popIn 0.18s ease-out;
-}
-.complete-btn:hover { filter: brightness(1.08); }
-@keyframes popIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+/* (Bottom status bar + Complete button removed — the active bin's own pulse and
+   N/total counter carry the "what to pick" cue, and completion now flows straight
+   to the empty-box popup with no confirmation button.) */
 
 /* ── Confirmation modal ───────────────────────────── */
 
@@ -332,7 +301,6 @@ h2 {
 @media (max-width: 720px) {
   body { padding: 8px; }
   header { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .statusbar { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
@@ -355,10 +323,17 @@ h2 {
   display: flex; align-items: center; justify-content: center;
   flex-wrap: wrap; gap: 18px; color: #fff;
 }
-.alert-icon { font-size: 34px; line-height: 1; }
-.alert-text {
-  font-family: var(--mono); font-weight: 700; font-size: 17px;
-  letter-spacing: 1px; text-transform: uppercase;
+.alert-icon { font-size: clamp(30px, 4vh, 42px); line-height: 1; }
+/* Keyword + subtitle stack: one big, simple keyword the operator reads at a
+   glance, with the specific corrective action beneath it. */
+.alert-main { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.alert-keyword {
+  font-family: var(--mono); font-weight: 800; font-size: 26px;   /* ~1.5× the subtitle */
+  letter-spacing: 1.5px; text-transform: uppercase; line-height: 1.05;
+}
+.alert-sub {
+  font-family: var(--mono); font-weight: 500; font-size: 17px;   /* corrective action */
+  letter-spacing: 0.5px; opacity: 0.95;
 }
 /* Separate badge for the specific bin to act on — a glanceable target
    distinct from the message sentence, not something the operator has to read
@@ -366,9 +341,11 @@ h2 {
    tile on the grid below. */
 .alert-bin {
   display: inline-block; padding: 6px 18px;
-  font-family: var(--mono); font-weight: 800; font-size: 22px;
+  font-family: var(--mono); font-weight: 800; font-size: clamp(26px, 4vh, 44px);
   letter-spacing: 2px; text-transform: uppercase;
-  color: #fff; background: rgba(0, 0, 0, 0.28);
+  /* Consistent error palette = red + white only. On the red banner the bin chip
+     is the inverse (white fill, red text) so it pops without a third colour. */
+  color: var(--alert); background: #fff;
   border: 2px solid #fff; border-radius: 8px;
 }
 .alert-bin.hidden { display: none; }
@@ -391,11 +368,13 @@ h2 {
 }
 
 /* ── Per-bin "return N" indicator (overpick) ────────── */
+/* Same error language as the banner: solid red fill, white text (was red-on-dark
+   — the "red on black" inconsistency Song Yi flagged). */
 .return-badge {
-  font-family: var(--mono); font-size: 10px; font-weight: 700;
-  color: var(--alert); letter-spacing: 0.5px; margin-bottom: 3px;
-  padding: 1px 6px; border: 1px solid var(--alert); border-radius: 8px;
-  display: inline-block; background: var(--alert-dim);
+  font-family: var(--mono); font-size: clamp(15px, 2.2vh, 22px); font-weight: 700;
+  color: #fff; letter-spacing: 0.5px; margin-bottom: 5px;
+  padding: 3px 10px; border: 2px solid var(--alert); border-radius: 8px;
+  display: inline-block; background: var(--alert);
 }
 
 /* ── Per-bin live load-cell weight ──────────────────── */

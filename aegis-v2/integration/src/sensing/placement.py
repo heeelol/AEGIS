@@ -23,8 +23,9 @@ Model
   load cell than the individual bin cells, so its own noise floor need not
   match theirs; tune independently if light items credit unreliably.
 * ``removed[bin]`` from each bin's own cell.
-* Three red faults (auto-clear when corrected): overpack-kit, pick-from-wrong-bin,
-  return-to-wrong-bin. Operators never take items back out of the kit box once
+* Four red faults (auto-clear when corrected): overpack-kit, pick-from-wrong-bin
+  (a bin not in this kit, or one already completed), return-to-wrong-bin, and
+  out-of-sequence (a not-yet-done kit bin reached too early). Operators never take items back out of the kit box once
   placed, so there's no separate remove-from-kit check — a box-weight decrease
   (e.g. correcting an overpack) just tracks normally, in either direction.
 * Wrong-bin detection knows what's actually in the operator's hand instead of
@@ -109,7 +110,12 @@ class PlacementTracker:
         count_tolerance_g: float | None = None,
         fault_settle_s: float = 2.5,
         activation_confirm_s: float = 0.4,
+        labels: dict[str, str] | None = None,
     ):
+        # Human-facing bin names ("BIN 1"…"BIN 9") for the fault messages, keyed
+        # by canonical bin id. Falls back to the raw id when unmapped so unit
+        # tests (which don't pass labels) still read sensibly.
+        self._labels = dict(labels or {})
         self._units = {b: float(u) for b, u in units_g.items() if u and u > 0}
         self._targets = {b: int(t) for b, t in targets.items()}
         self._box_id = box_id
@@ -161,6 +167,12 @@ class PlacementTracker:
         self._active: Optional[str] = None
         self._done: set[str] = set()
         self._removed = {b: 0 for b in self._units}
+        # High-water mark of `removed` per bin since the last tare. The placed
+        # (box) count is capped at this, NOT the instantaneous `removed`, so a
+        # transient dip in a bin's own cell (an arm pressing the bin, mechanical
+        # settle) can't momentarily un-count an item already in the box — the box
+        # count only falls when the BOX itself drops (the item genuinely leaves).
+        self._removed_peak = {b: 0 for b in self._units}
         self._placed = {b: 0 for b in self._units}
         self._activation_candidate = None
         self._activation_candidate_since = 0.0
@@ -183,6 +195,10 @@ class PlacementTracker:
     @property
     def expected_grams(self):
         return sum(self._targets.get(b, 0) * u for b, u in self._units.items())
+
+    def _lbl(self, bid):
+        """Human-facing name for a bin id ("BIN 6"), or the raw id if unmapped."""
+        return self._labels.get(bid, bid) if bid else bid
 
     def _count_h(self, b):
         """Hysteresis for item-count rounding, in units of one item — floored in
@@ -245,6 +261,8 @@ class PlacementTracker:
         # 1) per-bin removal (own cell, debounced)
         for b in self._units:
             self._removed[b] = self._hysteretic(self._raw_removed(sm, b), self._removed[b], self._count_h(b))
+            if self._removed[b] > self._removed_peak[b]:
+                self._removed_peak[b] = self._removed[b]
 
         # Per-bin steady-state: has this bin's own EMA actually caught up to its
         # raw reading yet? A bin mid-bump/press, or riding out mechanical
@@ -289,10 +307,16 @@ class PlacementTracker:
         # candidate changes or drops below threshold, the clock restarts — this
         # is a genuine "did it actually happen" check, not a fixed delay before
         # a real pick is allowed to register (a real reach clears it easily).
+        #
+        # Only bins that are in THIS kit (target > 0) can activate. A bin not in
+        # the BOM must never silently become the active bin when picked from —
+        # that pick is a mistake and has to fault (see the wrong-bin block below),
+        # not quietly focus the wrong bin and swallow the error.
         if self._active is None:
             now = time.time()
             cands = [b for b in self._units
-                     if b not in self._done and self._raw_removed(sm, b) >= self._activation]
+                     if b not in self._done and self._targets.get(b, 0) > 0
+                     and self._raw_removed(sm, b) >= self._activation]
             if not cands:
                 self._activation_candidate = None
             else:
@@ -382,18 +406,32 @@ class PlacementTracker:
                         raw_match, self._return_match[b], self._count_h(active))
                     returned = self._return_match[b] >= 1
 
+                # A mispick is classified by whether the bin is still a valid target:
+                #   - already DONE (green)  -> pick-from-wrong-bin: it's finished, you
+                #     must never take from it again — a real "wrong bin", not a timing slip.
+                #   - in the BOM, not done, but locked while another bin is active
+                #                           -> out-of-sequence: a required bin, just not yet;
+                #     put it back and finish the active one first.
+                #   - not in the BOM at all -> pick-from-wrong-bin: faults even while idle
+                #     (it can never activate, so nothing else flags the mistake).
+                in_bom = self._targets.get(b, 0) > 0
                 if b in self._done:
                     if returned:
                         fault = fault or self._fault("return-to-wrong-bin", b)
                     elif r > expected:
+                        # a completed/green bin — never pick from it again
                         fault = fault or self._fault("pick-from-wrong-bin", b)
                 else:  # available/locked, expected empty change
                     if returned:
                         fault = fault or self._fault("return-to-wrong-bin", b)
                     elif r >= 1:
-                        # In IDLE this bin would have been activated above; if we are
-                        # PICKING another bin, a drop here is a wrong-bin pick.
-                        if active is not None:
+                        if in_bom:
+                            # in the kit but locked while another bin is active;
+                            # when idle it would have activated above instead.
+                            if active is not None:
+                                fault = fault or self._fault("out-of-sequence", b)
+                        else:
+                            # not in this kit — always a wrong-bin pick, idle or not.
                             fault = fault or self._fault("pick-from-wrong-bin", b)
 
         # 4) active-bin counting + its faults
@@ -406,7 +444,12 @@ class PlacementTracker:
             # just track straight back down like any other change.
             placed = self._hysteretic(max(0.0, raw_placed), prev_placed, self._box_count_h(active))
 
-            placed = min(placed, self._removed[active])
+            # Cap at the HIGH-WATER removed, not the instantaneous value, so a
+            # transient dip in the active bin's own cell can't yank the box count
+            # back down to 0 while the item is sitting in the box (the flicker
+            # operators saw). A genuine removal from the box still lowers `placed`
+            # via `raw_placed` above — this only blocks the spurious dips.
+            placed = min(placed, self._removed_peak[active])
             self._placed[active] = placed
 
             if placed > self._targets[active]:
@@ -443,23 +486,46 @@ class PlacementTracker:
         )
 
     def _fault(self, kind, binid):
-        # Each message names the SPECIFIC bin the operator must act on, and says
-        # what to do with it — not just what went wrong. `binid` means something
-        # different per fault:
+        # The UI shows a big keyword (from `type`) plus this message as the
+        # corrective-action subtitle — so the message is the action only, no
+        # "WRONG BIN —" prefix (the keyword carries that). Each names the SPECIFIC
+        # bin to act on; `binid` means something different per fault:
         #   overpack-kit         -> the bin the excess belongs back in (== binid)
-        #   pick-from-wrong-bin  -> the bin something was wrongly taken FROM;
-        #                           the fix is to put it back THERE
+        #   pick-from-wrong-bin  -> a bin NOT in this kit, OR one already completed
+        #                           (green) — wrongly taken FROM; put it back THERE
         #   return-to-wrong-bin  -> the bin something was wrongly placed INTO;
-        #                           the fix is to take it back OUT of there (and,
-        #                           if a bin is currently active, it belongs there)
+        #                           the fix is to take it back OUT (and, if a bin
+        #                           is active, it belongs there)
+        #   out-of-sequence      -> a bin that IS in this kit and not yet done, but
+        #                           is locked while another bin is active; put it
+        #                           back and finish the active bin first
         active = self._active
-        belongs = f", BELONGS IN {active}" if active else ""
-        msgs = {
-            "overpack-kit": (lambda n: f"OVER-PACKED — REMOVE {n} FROM KIT, RETURN TO {binid}"),
-            "pick-from-wrong-bin": (lambda n: f"WRONG BIN — RETURN ITEM TO {binid}"),
-            "return-to-wrong-bin": (lambda n: f"WRONG BIN — REMOVE ITEM FROM {binid}{belongs}"),
-        }
-        n = 0
-        if kind == "overpack-kit" and binid:
+        lbl = self._lbl(binid)
+        active_lbl = self._lbl(active)
+
+        # Count of units the operator must move — the "how many?" operators said
+        # the corrections were missing. Derived per fault kind:
+        if kind == "overpack-kit":
             n = self._placed.get(binid, 0) - self._targets.get(binid, 0)
-        return {"type": kind, "bin": binid, "message": msgs[kind](n)}
+        elif kind in ("pick-from-wrong-bin", "out-of-sequence"):
+            # units wrongly taken OUT of binid = removed beyond what it should give
+            # (a completed bin should have given its whole target; any other, zero).
+            expected = self._targets.get(binid, 0) if binid in self._done else 0
+            n = self._removed.get(binid, 0) - expected
+        elif kind == "return-to-wrong-bin":
+            # foreign units the active item's weight says landed in binid.
+            n = self._return_match.get(binid, 0)
+        else:
+            n = 0
+        n = max(1, int(round(n)))  # always concrete + actionable (never "0"/"ITEM")
+
+        belongs = f", belongs in {active_lbl}" if active else ""
+        finish = f" — finish {active_lbl} first" if active else ""
+        msgs = {
+            "overpack-kit": f"Remove {n} from kit, return to {lbl}",
+            "pick-from-wrong-bin": f"Return {n} to {lbl}",
+            "return-to-wrong-bin": f"Remove {n} from {lbl}{belongs}",
+            "out-of-sequence": f"Return {n} to {lbl}{finish}",
+        }
+        return {"type": kind, "bin": binid, "bin_label": lbl,
+                "message": msgs[kind], "count": n}
