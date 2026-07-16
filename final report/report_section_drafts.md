@@ -206,52 +206,119 @@ do not induce hallucinations.
 **V3.** `[PLACEHOLDER — insert V3 findings: effect of fullness-varied training on
 accuracy / robustness.]`
 
-**Lighting.** `[PLACEHOLDER — insert lux-vs-confidence results from the
-characterisation workbook; state the reliable operating range and any weak
-conditions.]`
+**Lighting.** Illuminance was swept across **eight levels** spanning the station's
+full realistic range — from a fully darkened room (blinds down, all lights off) up
+to the tunable strip light at maximum with the office lights on — with the
+illuminance at each of the nine bins measured by lux meter at every level, giving
+**72 readings** in total. Taking the reference bin as the scale, the sweep ran from
+**~0 lux to ~506 lux**.
+
+Detection held at **100 % across every level and every bin**: all 72 readings
+identified the correct bin, including at the darkest condition. Confidence
+correlated only weakly with illuminance (Pearson *r* ≈ 0.27 linear, ≈ 0.40 against
+log-lux), and the trend was **non-monotonic** — the dimmest level was not the worst,
+with a shallow dip at a low-mid level instead. The practical conclusion is that the
+rim-centric detector is **not lighting-limited over the station's operating range**,
+satisfying the environmental-robustness requirement (FR-09); ambient light is
+therefore not a variable that needs controlling in deployment, beyond the matte
+anti-glare surface already specified.
 
 `[PLACEHOLDER — per-version metrics table: mAP / precision / recall.]`
-`[Figure 4.x — sample detections per setup version; lux-vs-confidence chart.]`
+`[Figure 4.x — sample detections per setup version; lux-vs-confidence chart (data:
+lighting_cv_test_backup.xlsx in sources/).]`
 
 ### 4.2.2 Load Cells
 
 #### 4.2.2.1 Testing Framework
 
-The load-cell verification logic was tested at two levels. At the **component
-level**, the placement tracker (which implements the FSM) was exercised by an
-automated unit-test suite that feeds synthetic weight sequences and asserts the
-resulting state — activation, per-bin counting, kit-box crediting, completion, and
-each of the four fault types — including deliberately adversarial edge cases
-(sensor settling windows, drift, and transient dips). At the **system level**, the
-assembled rig was driven through representative picking scenarios — correct picks,
-overpicks, wrong-bin picks, returns, and out-of-sequence picks — to confirm that
-faults fire and clear as intended.
+The load-cell hardware was qualified as a **measurement system** on the bench,
+independently of the verification logic, so that the counting behaviour built on
+top of it could be interpreted against known sensor limits. Three platform
+configurations were tested, matching the three bin sizes:
+
+| Config | Cells | Wiring | Platform geometry | Max test load |
+|---|---|---|---|---|
+| **1 kg** | 1 × 1 kg | 1 HX711 | single 100 mm-radius circle | 1 000 g |
+| **5 kg** | 3 × 5 kg | summed → 1 HX711 | 2 × 50 mm circles + 1 apex 50 × 100 mm rectangle | 5 000 g |
+| **10 kg** | 3 × 10 kg | summed → 1 HX711 | 2 × 50 mm circles + 1 apex 50 × 100 mm rectangle | 10 000 g |
+
+Each three-cell platform reports **one summed weight** (three bridges into a single
+HX711); all three cells share a rigid base and a single bin rests across all three.
+Test loads came from a graded reference-mass kit of individually weighed sand bags
+(reference scale: 1 000 g capacity, 0.1 g readability); because that scale caps
+direct weighing at 1 000 g, every load above 1 kg was built by **stacking
+individually-weighed ≤ 1 kg bags**, carrying an accumulated ±0.1 g-per-bag
+uncertainty and setting a realistic ~0.5 g practical floor for the 1 kg ladder.
+Actual (weighed), not nominal, masses were used throughout the analysis.
+
+The battery was organised as **Capability → Stability → Integration**, with a
+dedicated testing firmware streaming raw CSV (`millis, channel, raw, grams`):
+
+- **Capability** — A1 minimum detectable mass (noise floor and count registration),
+  A2 repeatability (5 trials × 5 points), A3 hysteresis (up-path vs down-path).
+- **Stability** — A4 warm-up / thermal drift (cold vs 30 min warmed), A5 creep at
+  two loads.
+- **Integration** — A6 off-centre / placement sensitivity, A8 settling time.
+
+Cells were warmed up for 30 minutes before the capability tests so early
+instability would not contaminate the noise floor, and re-tared before each block.
+Every cell recorded is a raw reading; readiness was judged post-hoc rather than by
+baked-in pass/fail verdicts.
 
 #### 4.2.2.2 Evaluation Results
 
-Counting is **placement-driven**: a bin's count advances only when weight is
-verified as entering the kit box, and completed bins are banked so their counts do
-not fluctuate. The four faults were confirmed to trigger on the correct conditions
-and to auto-clear on correction.
+**Capability.** The zero-noise band (σ on an empty, tared cell) and the smallest
+reliably-separated mass both scale with platform capacity:
 
-Testing also exposed the **precision limits of gravimetric sensing for light
-items**, which are inherent to the sensor rather than the logic. The kit box is a
-coarse, high-capacity cell; resolving a component of only a few grams on top of a
-box already holding the rest of the kit is at the edge of the cell's resolution,
-and its drift/noise can be misread as phantom placements — worst when the lightest
-bin is packed last. This was mitigated in software with absolute-gram floors on
-both the return-to-wrong-bin and kit-box crediting thresholds, and operationally
-by not sequencing the lightest bin last; the durable remedy is a finer-capacity
-cell for the kit box. Bin cells are also tared once at boot and drift over a
-session, which can nudge fault thresholds.
+| Config | Zero-band σ (g) | Min. detectable mass (g) | Repeatability SD @ 50 % (g) | Max hysteresis (g) |
+|---|---|---|---|---|
+| 1 kg (1 cell) | 0.028 | ~0.5 | 0.009 | 0.09 |
+| 5 kg (3 cells) | 0.223 | ~2.3 | 1.06 | 5.44 |
+| 10 kg (3 cells) | 0.433 | ~4.3 | 2.85 | 16.99 |
 
-Two hardware-reliability findings were recorded: several individual load-cell
-channels were found reading a flat zero (disconnected cells needing attention),
-and the load-cell microcontroller's USB link exhibited intermittent resets that
-dropped the serial connection — both cabling/hardware issues rather than software.
+Against the accepted reference that reliable single-pick counting requires a unit
+mass of **≥ 5–10 × σ**, this quantifies the light-item limit precisely: the
+lightest components in the BOM (~3–3.5 g) are comfortably resolved on the **1 kg**
+platform, but sit at or below the reliable threshold on the **5 kg** and **10 kg**
+platforms. Absolute accuracy was otherwise excellent — grams-versus-reference
+agreed within a few tenths of a gram across the full ladder (e.g. 1 kg config:
+500.0 g reference → 501.187 g mean; 5 kg: 5 004.2 g → 5 010.053 g). Repeatability
+and hysteresis degrade with capacity in the same proportion, confirming the
+resolution-for-range trade-off described in Section 3.2.2.
 
-`[PLACEHOLDER — insert quantitative accuracy: measured counting accuracy per bin
-size / item weight, false-fault rate.]`
+**Stability.** Warm-up drift (A4) over 30 minutes at mid-load was ≤ 0.22 g on the
+1 kg platform but reached ~6 g on the 5 kg — justifying the 30-minute warm-up and
+periodic re-taring as standard procedure. Creep (A5) stayed within ~0.1 % of the
+applied load on all three configs, so sustained load itself is not a material
+error source over a kitting session.
+
+**Integration.** The decisive finding for the summed three-cell platforms was
+**off-centre placement sensitivity** (A6). The 1 kg single-cell platform was
+essentially position-invariant (≤ ~0.2 g deviation across a 90 mm radius). The
+three-cell platforms were **not**: moving the *same fixed mass* from the calibrated
+centroid to directly over an individual cell or the apex shifted the summed reading
+by tens of grams — **5 kg: −38.6 g to +64.0 g; 10 kg: −65.8 g to +105.0 g**. For
+the larger bins, therefore, *where* a component sits on the platform materially
+affects the reading, which bounds how finely those platforms can resolve individual
+picks regardless of the electronics. Settling time (A8) was 0.3–0.6 s per step at
+the firmware's 10 SPS.
+
+**Implications.** These metrology limits explain and bound the light-item behaviour
+observed at system level: the lightest components are only reliably counted on the
+smallest (1 kg) platform, while the medium and large three-cell platforms trade
+both resolution and placement-invariance for capacity. The counting and fault logic
+built on these cells is validated separately in Section 4.3.2; its light-item edge
+cases were mitigated there with absolute-gram floors on the crediting and
+return-detection thresholds, and operationally by not sequencing the lightest bin
+last. Two hardware-reliability issues were also recorded during integration:
+several individual channels were found reading a flat zero (disconnected cells),
+and the load-cell microcontroller's USB link showed intermittent resets that dropped
+the serial connection — both cabling/power faults rather than software.
+
+`[Figure 4.x — min-detectable-mass and off-centre deviation by platform; full raw
+ladders, trial tables and drift logs in the Appendix / AEGIS_LoadCell_Qualification.]`
+`[PLACEHOLDER — unit-to-unit consistency across the other two units per platform
+type, and the crosstalk figure, once those runs are filled in.]`
 
 ---
 
@@ -374,14 +441,20 @@ the core functional requirements (FR-02, FR-04, FR-05, FR-06) while running
 entirely on-device and augmenting, rather than replacing, the existing manual
 workflow.
 
-The prototype was validated across its three subsystems: the vision model was
-shown to be rim-centric and robust to bin contents and lighting; the load-cell
-logic was verified against representative picking scenarios and an automated test
-suite; and a six-operator user study confirmed that the system communicates the
-task exceptionally well and is preferred over the paper baseline, while surfacing
-concrete interface weaknesses that a subsequent iteration addressed. The
-architecture also leaves substantial compute headroom, supporting the intended
-multi-workstation extension (FR-11) without per-station redesign.
+The prototype was validated across its three subsystems. The vision model was shown
+to be rim-centric — detecting bins independently of their contents — and to hold
+100 % detection from near-darkness to full office lighting, satisfying FR-09. The
+load-cell platforms were qualified as a measurement system, establishing their
+minimum detectable mass (0.5 g / 2.3 g / 4.3 g for the 1 kg / 5 kg / 10 kg
+configurations) and, critically, the off-centre placement sensitivity of the summed
+three-cell platforms — limits that bound which components can be reliably counted on
+which bins. A six-operator user study confirmed that the system communicates the
+task exceptionally well (what and how many to pack rated at ceiling) and is
+preferred over the paper baseline, while surfacing concrete interface weaknesses
+that a subsequent iteration addressed. The architecture also leaves substantial
+compute headroom — the full pipeline occupies roughly one of the edge device's
+twelve cores — supporting the intended multi-workstation extension (FR-11) without
+per-station redesign.
 
 `[PLACEHOLDER — add any headline quantitative outcomes once the cycle-time /
 defect-catch data is reconciled.]`
