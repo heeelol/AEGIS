@@ -107,3 +107,8 @@ Thumbs.db
 *.pickle
 .cache/
 node_modules/
+
+# ============= REPORT SUPPLEMENTS =============
+# Keep findings (Excel, CSV, images, exported docs) placed under the report's
+# sources/ folder, overriding the dataset ignores above.
+!final report/sources/**
