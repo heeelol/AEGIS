@@ -1,0 +1,726 @@
+
+
+
+
+
+
+IS-305: AI Vision Based Kitting Solution for Warehousing
+
+CDE3301 Final ReportAY 2025/26
+
+
+Submitted by
+Lim Kai Ler EthanA0307499M
+Aw Shuo JieA0309254E
+Yap Jia WeiA0307951B
+Yeo Chen XianA0299847Y
+
+SupervisorsEugene EeChan Tong Leong
+
+Table of Contents
+[Insert Table of Contents here — use Word's built-in References > Table of Contents feature after pasting.]
+
+Chapter 1: Introduction and Problem Statement
+This chapter establishes the motivation, context, and engineering basis for the AEGIS (AI-Enhanced Guidance and Inspection System) project. It begins by characterising the manual kitting process and its associated error profile within a high-mix electronics connector manufacturing environment, before systematically analysing the root causes of kitting failures. Existing verification methods and commercial alternatives are evaluated, and their limitations in the target operational context are identified. The chapter concludes by defining stakeholder requirements, functional requirements, and the project scope that collectively frame the design and development effort.
+1.1 Problem Introduction
+TE Connectivity Ltd. is a global manufacturer of connectivity and sensor solutions, serving industrial, automotive, aerospace, medical, and commercial transportation sectors. With annual revenues of approximately USD 17.3 billion (FY2025) and manufacturing operations spanning 105 principal sites across the Americas, EMEA, and APAC regions, TE Connectivity operates at a scale at which marginal inefficiencies in production processes translate into significant financial and reputational consequences. The company's product catalogue encompasses more than 242 billion components annually, including connectors, sensors, relays, precision wire and cable, and application tooling, each produced across a portfolio of approximately 4,000 distinct stock-keeping units (SKUs).
+Within TE Connectivity's assembly plants — including facilities in China, Poland, and Mexico — a critical mid-stream operation known as cell kitting is performed manually by ground operators. Kitting refers to the process of collecting and assembling a prescribed set of components into a single unit or package, in preparation for downstream assembly, shipment, or customer delivery. Each kitting order specifies a particular mix of SKUs and quantities, drawn from a subset of the approximately 800 to 900 commonly active SKUs. Orders are typically fulfilled in one to two hours, with an estimated 50 to 100 individual packages packed per order at each kitting station. Given a team size of four to six operators per kitting line, the cumulative throughput per shift is substantial.
+The manual nature of this process introduces an inherent susceptibility to human error. Operators must repeatedly identify, retrieve, and pack correct components across a high-variety product range, under production time pressure and across extended shift durations. The primary error types observed are: the inclusion of incorrect components (wrong part), omission of required components (missing part), and packing of incorrect quantities (wrong quantity — either too few or too many). These errors are not immediately self-evident at the point of commission, as the current verification infrastructure consists solely of a digital postal scale used by operators to weigh each completed kit against an expected aggregate weight. No real-time feedback mechanism exists to alert operators during the act of kitting itself.
+The consequences of kitting errors propagate across the supply chain. Errors that pass the scale check may be identified at downstream quality control inspections, at end-of-line audits, or — in the worst case — only upon delivery to the customer, necessitating replacement orders, rework, or scrapping of affected kits. TE Connectivity's own estimate places the Cost of Poor Quality (COPQ) attributable to kitting errors at between USD 10,000 and USD 20,000 per kitting line per year, accounting for rework labour, component replacement, logistics costs associated with replacement shipments, and the residual risk of customer complaints and reputational damage. Given that this figure represents only the directly quantifiable cost for a single line, the aggregate impact across TE Connectivity's multi-plant, multi-line operations represents a substantially greater financial exposure.
+The AEGIS project is initiated in direct response to this operational problem. Its primary objective is to develop a proof-of-concept, edge-deployed, multi-modal error detection system that can identify kitting errors — specifically wrong components, missing components, and incorrect quantities — at the point of packing, in real time, and in a manner that prompts corrective action from the operator before a defective kit is completed. The system is intended to augment, rather than replace, the manual kitting workflow, operating within the constraints of an existing manufacturing environment without requiring changes to workstation layout, bin configurations, or standard operating procedures.
+1.2 Root Cause Analysis
+A structured analysis of the contributing factors to kitting errors reveals that the problem is not attributable to a single systemic failure, but rather to an interaction of cognitive, ergonomic, procedural, and technological factors that collectively elevate error probability in high-mix manual assembly environments.
+At the operator level, cognitive overload is a primary contributor. Kitting operators must simultaneously manage the order specification, identify components across multiple bins containing visually similar parts — connectors and electronic components frequently share form factors, colour schemes, or packaging styles — and maintain accurate counts across varying quantities per kit. This cognitive demand is compounded by production time pressure, which incentivises speed over deliberate verification. Fatigue, particularly during later stages of extended shifts, further degrades attentional accuracy and increases the likelihood of substitution and omission errors. Workstation ergonomics may also play a role: where bin layout is suboptimal or where components are stored in configurations that require repeated handling, the physical and cognitive demands of each kit increment.
+At the procedural level, the verification mechanism in current use — a post-kit gravimetric check using a digital scale — is structurally insufficient for reliable error detection. The scale provides a single aggregate weight measurement of a completed kit, which is then compared against an expected total weight derived from the order specification. This approach is vulnerable in several respects. First, it cannot localise or diagnose an error: a weight discrepancy may correspond to a missing part, an excess part, a wrong part, or any combination thereof, without any information as to which component is implicated. Second, the measurement is subject to component weight tolerances: the unit mass of individual components ranges from approximately 0.5 grams to 1 kilogram, and manufacturing tolerances mean that individual parts may deviate from their nominal weight, introducing measurement uncertainty at fine granularity. Third, and most critically, the aggregate nature of the measurement creates the possibility of error cancellation: a deficit from one missing component may be arithmetically offset by a surplus from an excess component of similar mass, producing a kit weight that appears within tolerance despite containing multiple errors. Fourth, even where a weight discrepancy is detected, the scale offers no information to guide corrective action — the operator must re-verify the entire kit manually, consuming cycle time and adding process friction.
+Synthesising these contributing factors, the root cause of the kitting error problem can be characterised as the absence of a real-time, part-specific verification mechanism at the operator workstation. Current tools are reactive rather than proactive: they detect aggregate outcomes rather than individual actions, they provide no in-process guidance to the operator, and they enforce no corrective behaviour before a defective kit is dispatched.
+1.3 Current Solutions and Limitations
+A range of verification and error-proofing approaches exists within the broader manufacturing and logistics sector. These can be grouped into five categories: manual process controls, barcode and RFID-based identification, vision-based inspection systems, gravimetric verification, and automated picking technologies. Each is examined below in the context of TE Connectivity's operational requirements.
+Manual process controls — including paper checklists, supervisor sign-offs, and peer verification — represent the baseline approach. While requiring no capital investment, they do not eliminate human error; they merely introduce an additional human in the verification loop, which itself is subject to the same cognitive and fatigue-related failure modes as the original kitting act.
+Barcode and RFID scanning — where each component or bin is scanned at the point of handling — offers precise part-level identification and can enforce sequence compliance. However, the implementation burden in TE Connectivity's environment is substantial. With approximately 800 to 900 active SKUs and a high-mix order profile, maintaining up-to-date barcode or RFID labelling across all bins and components introduces significant setup and maintenance overhead. More critically, these systems require an additional handling step per component — the scan — which directly increases operator cycle time per kit.
+Commercial machine vision systems — such as those offered by Cognex, Keyence, and similar providers — are capable of high-accuracy part identification and defect detection in controlled environments. However, they are generally optimised for fixed-configuration, single-product or narrow-product-range inspection tasks on automated production lines. In TE Connectivity's high-mix kitting context, the configuration and retraining effort for commercial systems would be considerable, and the licensing and hardware cost is typically high relative to the COPQ figures associated with the target problem.
+Pick-to-light systems — which illuminate the correct bin and prompt the operator with the required quantity — address the guidance problem effectively but require fixed bin configurations and dedicated hardware installation at each workstation position. They cannot verify that the correct component was retrieved from the illuminated bin, nor that the correct quantity was actually placed in the kit.
+A common limitation across all existing approaches is their inability to fulfil three simultaneous functions: predicting or detecting errors at the point of occurrence, diagnosing the specific nature of the error, and enforcing corrective action by the operator before the kit is completed. No single existing solution addresses all three functions in a form that is cost-effective, adaptable to a high-mix environment, and compatible with an unmodified manual kitting workflow.
+1.4 Stakeholder Requirements
+The AEGIS system serves a diverse set of stakeholders whose requirements must be identified and balanced in the system design. These stakeholders span the operational, managerial, technical, and commercial dimensions of TE Connectivity's manufacturing enterprise, as well as the academic context of the project. The stakeholder requirements are summarised in Table 1.1.
+Stakeholder
+Role
+Primary Requirements
+Key Concerns
+Ground Operator
+Primary end-user at the kitting workstation
+Minimal disruption to kitting rhythm; clear and immediate error feedback; system must not add handling steps
+Cycle time impact; ease of use; false alarm frequency
+Production Supervisor
+Oversees cell kitting lines and operator performance
+Reliable error capture; visibility of operator compliance; minimal supervision overhead
+System reliability; alert accuracy; ease of monitoring
+Plant Production Manager
+Responsible for line throughput and cost performance
+Reduction in COPQ; no degradation of throughput; low total cost of ownership
+ROI; system uptime; scalability across lines
+Quality Engineer
+Responsible for in-process and outgoing quality assurance
+High detection rate for missing and wrong components; audit trail of kitting events
+False negative rate; traceability; integration with QC processes
+TE Connectivity (Org.)
+Problem owner and industrial partner
+Deployable across China, Poland, and Mexico plants; adaptable to varied environments
+Generalisation across sites; IP and data protection
+End Customer / Client
+Recipient of kitted component orders
+Correct components delivered in correct quantities; elimination of replacement orders
+Order accuracy; delivery reliability
+Maintenance / Plant Eng.
+Responsible for system upkeep and SKU configuration
+Simple onboarding process for new components; minimal specialist expertise required
+Onboarding time; calibration ease; hardware serviceability
+Advantech (Hardware)
+Supplier of edge computing and HMI hardware
+Hardware must be featured and validated within the prototype
+Hardware compatibility; performance validation
+
+Table 1.1: Stakeholder requirements summary.
+Several tensions exist across stakeholder requirements that inform design trade-offs throughout the project. The ground operator's requirement for minimal cycle time impact is in tension with quality engineers' desire for high detection coverage; this trade-off is addressed by designing the system to operate passively during normal kitting and to intervene only upon detection of an anomaly. The production manager's cost sensitivity is addressed by positioning the system's total hardware cost below the lower bound of the annual per-line COPQ figure of USD 10,000, thereby ensuring a favourable return on investment within the first year of deployment.
+1.5 Functional Requirements
+The functional requirements of AEGIS are derived from the operational problem characterised in Sections 1.1 through 1.3 and from the stakeholder requirements defined in Section 1.4. They are presented below as discrete, verifiable requirements, distinguished from non-functional considerations where appropriate.
+ID
+Category
+Requirement
+Rationale
+FR-01
+Component Identification
+The system shall identify which component type is present in each active kitting bin at the operator workstation.
+Enables part-specific rather than aggregate verification; prerequisite for wrong-part and missing-part detection.
+FR-02
+Wrong Part Detection
+The system shall detect when a component placed into a kit does not correspond to the component specified in the active order.
+Directly addresses the wrong-part error type identified as a primary failure mode.
+FR-03
+Missing Part Detection
+The system shall detect when the kit is completed with one or more required components absent or below the specified quantity.
+Missing parts represent the highest-priority error type due to their direct impact on customer order fulfilment.
+FR-04
+Quantity Verification
+The system shall verify that the quantity of each component placed into the kit matches the quantity specified in the order.
+Quantity errors are not reliably detectable by gravimetric methods alone due to weight tolerance and cancellation effects.
+FR-05
+Real-Time Alerting
+The system shall notify the operator of a detected error within a timeframe sufficient to enable corrective action prior to kit completion.
+Proactive in-process notification is the defining capability absent from all current solutions.
+FR-06
+Corrective Guidance
+The system shall present actionable corrective guidance upon error detection, specifying the nature and location of the error.
+Without specific guidance, operators cannot efficiently resolve errors.
+FR-07
+Order Integration
+The system shall accept order specifications — including component identities, bin assignments, and required quantities — as inputs.
+Verification must be order-specific; a part correct for one order may be incorrect for another.
+FR-08
+New Part Onboarding
+The system shall support efficient onboarding of previously unseen component types without requiring specialist ML expertise.
+TE Connectivity's 4,000-SKU catalogue and ongoing new product introductions necessitate a scalable onboarding process.
+FR-09
+Environmental Robustness
+The system shall operate correctly under varying ambient lighting conditions and shall not require modification of the workstation.
+It is operationally infeasible to modify assembly line configurations to accommodate a verification system.
+FR-10
+Supervisor Visibility
+The system shall provide supervisory personnel with visibility of kitting status and error events.
+Supervisors require situational awareness without physically attending each workstation.
+FR-11
+Scalability
+The system architecture shall support extension to multiple concurrent workstations without fundamental redesign.
+Single-workstation deployment is the prototype scope; multi-workstation deployment is the intended production scenario.
+
+Table 1.2: Functional requirements for the AEGIS system.
+In addition to the functional requirements above, several non-functional considerations constrain the design. The system must not measurably increase the per-kit cycle time experienced by the operator under normal (error-free) kitting conditions. The total hardware cost per workstation must be demonstrably below the lower bound of the annual per-line COPQ figure of USD 10,000 to support a positive return on investment within the first operating year. All processing must be performed on-device with no production data transmitted to external networks, satisfying TE Connectivity's data sensitivity requirements.
+1.6 Value Proposition and Scope
+1.6.1 Value Proposition
+AEGIS addresses a well-defined operational gap: the absence of real-time, part-specific error detection and corrective guidance at the cell kitting workstation. The system's value is grounded in three distinct contributions relative to the current state at TE Connectivity.
+First, AEGIS shifts the point of error detection upstream, from post-kit gravimetric verification or downstream QC inspection to the moment of component placement. Second, the system employs complementary sensing modalities — computer vision for visual part identification and load cell-based gravimetric sensing for continuous quantity monitoring — to achieve a detection capability that neither modality can provide independently. Third, the system is designed specifically for the high-mix, manual kitting context that commercial alternatives address poorly. Its edge-deployed architecture, order-driven verification context, and environment-agnostic operational requirements allow it to function across TE Connectivity's geographically and operationally diverse manufacturing sites without site-specific infrastructure investment.
+1.6.2 Project Scope
+The scope of the AEGIS project, as a proof-of-concept prototype, is precisely bounded to manage complexity within the constraints of available time, budget, and resources. The following are within scope: the design, integration, and validation of a single-workstation AEGIS unit comprising computer vision and gravimetric sensing subsystems; the development of software for real-time component identification, error detection, and operator alerting; an operator-facing HMI display and a supervisor-facing display; a hardware architecture designed to support multi-workstation data aggregation, though multi-workstation physical deployment is not validated; and laboratory-based prototype validation using simulated kitting tasks representative of TE Connectivity's operational workflow.
+The following are explicitly outside scope: deployment across multiple simultaneous physical workstations in a production environment; integration with TE Connectivity's enterprise resource planning (ERP) or manufacturing execution system (MES); automation of any component of the kitting process; modification of existing standard operating procedures; and the handling of components that are opaque to camera-based identification due to packaging.
+
+Chapter 2: Design Overview
+2.1 Concept Overview
+The system architecture of AEGIS is conceived as a modular, edge-deployed framework comprising four distinct subsystems, each addressing a specific functional layer of the verification pipeline. These subsystems — the physical frame, the sensor hardware array, the edge processing unit, and the operator human-machine interface (HMI) — are designed to operate in concert while maintaining clear interface boundaries, thereby permitting independent development, testing, and iteration of each subsystem. The system architecture is illustrated in Figure 2.1.
+[INSERT FIGURE HERE]
+Figure 2.1: AEGIS system architecture diagram. Dotted lines delineate the four subsystems: Physical Frame, Sensor Hardware, Edge Processing, and HMI. Solid arrows indicate real-time data flow between components.
+Subsystem 1, the Physical Frame, structurally positions the sensing hardware around an unmodified manual kitting workstation. It mounts the camera overhead to achieve an unobstructed field of view of the entire workspace and provides the physical support for the nine-bin grid and the kit box consolidation area, utilising a matte electrostatic-discharge (ESD) mat to suppress specular glare.
+Subsystem 2, the Sensor Hardware, captures raw physical signals from the environment. This comprises an overhead USB camera streaming 1080p video at 30 frames per second, and a summed three-point load cell array routed through HX711 24-bit analogue-to-digital converters to an ESP32 microcontroller, which transmits weight data via USB serial in JSON format.
+Subsystem 3, the Edge Processing unit, ingests raw sensor feeds and applies real-time machine learning inference and state tracking. It runs on the Advantech MIC-733 (NVIDIA Jetson AGX Orin), hosting the YOLOv8-OBB bin boundary detector, the MediaPipe hand landmark tracker, the geometric bin assignment engine with occlusion gating, and the sequential single-bin finite state machine (FSM) that governs the verification logic.
+Subsystem 4, the HMI Display, renders real-time guidance and alerts to the operator on a full-screen touchscreen browser window served locally via a FastAPI web server. The same endpoint permits supervisors to access the dashboard remotely over the local network, satisfying the supervisor visibility requirement (FR-10).
+2.1.1 Translation of Stakeholder Requirements into Technical Specifications
+To ensure that the engineering design directly addresses the plant's operational goals, stakeholder requirements — as defined in Section 1.4 — were systematically translated into technical specifications that can be applied to the system configuration. This translation is summarised in Table 2.1.
+Stakeholder Requirement
+Technical Translation
+Applied Configuration Specification
+The system must not disrupt the operator's packing rhythm or require additional handling steps (Ground Operator).
+Passive sensing with zero added operational handling steps.
+Gravimetric load-cell sensing for count verification combined with overhead camera hand tracking; no barcode scanning or manual input required.
+The system must detect wrong parts, missing parts, and incorrect quantities (Quality Engineer).
+Multi-modal exception mapping within the verification logic.
+Sequential single-bin FSM enforcing four discrete error states: Overpack, Out-of-Sequence, Wrong Bin, and Returned-to-Wrong-Bin.
+Errors must be communicated immediately so the operator can correct them before kit completion (Ground Operator).
+Low-latency state processing and HMI updating.
+End-to-end system latency below 100 ms; CV processing at ≥30 fps; load cell sampling at 10 SPS.
+It must be straightforward to set up new SKU orders and reconfigure the bin layout (Maintenance Engineer).
+Dynamic geofencing and soft-coded item databases.
+Two-snapshot YOLOv8-OBB bin calibration at session start; SKU-to-weight mapping controlled via a YAML configuration file without model retraining.
+Workstations vary in lighting and layout across plants; the system must not require environmental modification (Plant Manager).
+Environmental invariance and layout independence.
+Rim-centric bin detection model; matte anti-glare ESD mats; verified operational range from 0 to 506 lux.
+Production data must remain within the plant network (Plant Manager).
+On-device processing without cloud dependencies.
+All inference and data storage performed locally on the Jetson AGX Orin; no external network transmission.
+
+Table 2.1: Translation of stakeholder requirements into technical specifications.
+2.2 Design Selection
+This section presents the morphological analysis used to select the implementation approach for each system feature. The analysis is structured in two levels: Section 2.2.1 covers the systemic-level decisions that define the overall architecture, while Section 2.2.2 refines each subsystem into specific hardware and software selections, with the engineering reasoning for each choice explicitly stated.
+2.2.1 System Selection
+Feature
+Option A
+Option B
+Option C
+Option D
+Selected & Reasoning
+Worker Dashboard
+Monitor
+Physical Buttons
+Audio / Voice
+—
+Monitor: Provides intuitive, clear instructions and visual feedback with no per-station software installation.
+Feedback Mechanism
+Audio Alerts
+Haptic Feedback
+Visual Feedback
+—
+Visual Feedback: Non-intrusive and does not affect neighbouring workstations in a shared production environment.
+Processing Architecture
+Edge AI PC
+Raspberry Pi
+Workstation Desktop
+Microcontroller
+Edge AI PC: Faster GPU-accelerated processing in an industrial-grade form factor rated for continuous operation.
+Camera Mounting
+Fixed Mount
+Adjustable Arm
+Rail Mounting
+—
+Fixed Mount: Minimises variables and ensures consistent hand and bin visibility across sessions.
+Item Identification
+RFID
+Computer Vision
+Manual Initialisation
+—
+Manual Initialisation: The SKU catalogue (~800–900 parts) is too large for per-item CV or RFID tagging. Bin-level identity via manual order entry resolves this.
+Quantity Identification
+Weight
+Computer Vision
+Manual Counter
+Optical Gate
+Weight: A component weight database is already established at TE Connectivity; gravimetric sensing provides passive, continuous counting.
+Worker Intention
+Weight
+Computer Vision
+Neural Implant
+Optical Gate
+Computer Vision: Most accurate and readily available hand-tracking models (MediaPipe) determine which bin the operator is reaching into.
+
+Table 2.2: System-level morphological matrix.
+2.2.2 Detailed Selection
+This section refines each subsystem chosen in Section 2.2.1 into a concrete implementation choice. The component selection reasoning is explicitly stated for each decision to provide traceability between the design rationale and the resulting prototype configuration.
+Component
+Option A
+Option B
+Option C
+Option D
+Selected Option & Engineering Rationale
+Monitor Application
+Web Application
+Desktop Application
+Mobile Application
+Terminal-based
+Web Application: Runs full-screen in a browser on the touch HMI with no per-station installation requirement. Served locally from the edge device via FastAPI, inherently cross-platform, and permits remote supervisor access.
+Edge AI PC
+Jetson Orin Nano
+Jetson Orin NX
+Jetson AGX Orin
+Generic mini-PC
+Jetson AGX Orin (Advantech MIC-733): Provides GPU-accelerated tensor cores capable of running the full multi-model pipeline (bin detection + hand tracking) at approximately 30 fps with substantial compute headroom, utilising only one of twelve available CPU cores. Its industrial form factor and CUDA ecosystem align with the CV toolchain requirements.
+Hand Detection Model
+MediaPipe Hands
+YOLO-Pose
+OpenPose
+Custom model
+MediaPipe Hands: Offers off-the-shelf, real-time 21-landmark hand tracking that operates reliably on-device using a lightweight float16 model without requiring bespoke training data or custom model development.
+Bin Boundary Model
+YOLO-OBB (Ultralytics)
+YOLOv8-Seg
+Mask R-CNN
+Classical CV (contours)
+YOLOv8-OBB (Oriented Bounding Box): Produces tight polygon geofences aligned to the actual bin orientation, achieving superior edge isolation over standard axis-aligned bounding boxes. Trained and augmented via Roboflow; GPU-efficient on the Jetson platform.
+Weight Sensors
+Kitchen scale
+1× load cell
+Human weighing scale
+3× load cell
+Three-point load cell configuration: Distributes the load across three sensors arranged in a triangle, ensuring that the bin's centre of gravity always falls within the support triangle for mechanical stability and accurate readings. Three cells (not four) are chosen because a three-point plane is statically determined, preventing rocking on uneven surfaces.
+
+Table 2.3: Detailed component selection morphological matrix.
+2.2.3 Finite State Machine
+The core of AEGIS's verification logic is a finite state machine (FSM) that interprets the continuous stream of load-cell and vision data as a sequence of discrete, verifiable kitting actions. The central design decision is that only one bin is active at any moment — a sequential, single-bin model.
+This constraint is deliberate and resolves a fundamental measurement ambiguity. Because the kit box is monitored by a single load cell, a change in its weight cannot in general be attributed to a specific component if several bins are being picked from concurrently — two components of similar mass drawn from different bins are indistinguishable to the box's aggregate reading. By requiring the operator to complete one bin before starting the next, the only item type that can be entering the box at any instant is known, which removes the cross-bin weight ambiguity and allows every placement to be attributed and counted unambiguously.
+The machine occupies one of the following states:
+IDLE — no bin is active; the operator may begin any not-yet-completed bin in the current order.
+PICKING — a bin has been activated (the first pick from it is detected) and is now the sole bin whose picks are counted; all other bins are soft-locked.
+FAULT — an error condition has been detected; counting is suspended until the operator corrects it, whereupon the fault auto-clears and the machine returns to PICKING.
+KIT_COMPLETE — every bin required by the order has reached its target quantity; the kit is verified.
+WAITING_EMPTY — the operator is prompted to empty the completed kit into its container before the next set begins.
+A bin is activated by the first clear removal of an item from it, confirmed over a short debounce window to reject transient sensor noise. Once activated, the bin's counter advances only when items are verified as placed into the kit box — not merely removed from the bin — so that a pick is credited only once the component has actually reached the kit. When the active bin reaches its target quantity it is banked and frozen (its count no longer fluctuates) and the lock releases, allowing the next bin to be started. The order is complete once every required bin is banked.
+The FSM continuously evaluates four fault conditions:
+Overpack — more of the active component has been placed into the kit box than the order requires.
+Picked-from-wrong-bin — a component has been taken from a bin that is not part of the current order, or from one that has already been completed.
+Returned-to-wrong-bin — a component has been placed into a bin to which it does not belong.
+Out-of-sequence — a component has been taken from a bin that is part of the order but is not the currently active bin (picked out of turn while another bin is locked).
+This fault taxonomy realises functional requirements FR-02 (wrong-part detection), FR-04 (quantity verification), and FR-06 (corrective guidance): each fault is specific enough to tell the operator not only that an error occurred, but which bin and how many units are involved, enabling correction before the kit is completed.
+[INSERT FIGURE HERE]
+Figure 2.2: AEGIS sequential single-bin kitting verification FSM state diagram. States: IDLE → PICKING → (FAULT) → KIT_COMPLETE → WAITING_EMPTY, with the four fault transitions indicated.
+
+Chapter 3: Prototype Development
+This chapter describes the implementation of each subsystem identified in the system architecture (Chapter 2). The prototype was developed using a structured methodology designed to imitate the working environment of TE Connectivity's kitting stations. Each subsystem — the physical frame, computer vision, load cells, and user interface — was prototyped and validated independently against its respective design requirements before full system integration was undertaken. The design decisions documented herein flow directly from the system architecture and the functional requirements established in the preceding chapters.
+3.1 Physical Frame
+The physical frame was developed using a structured methodology to imitate the working environment of TE Connectivity's manual kitting workstations. Based on the plant's requirement specifications and following the stakeholder's requirements for the workstation configuration, the frame positions the sensing hardware around an unmodified manual kitting workstation, in keeping with the requirement (FR-09) that the system adapt to the environment rather than the reverse. Two constraints drove its design.
+First, the camera is mounted overhead, above operator height, so that it never obstructs the operator's reach and so that the entire nine-bin grid and the kit box sit within its field of view, clear of the operator's hands during normal picking. Second, the working surfaces use matte ESD mats, which suppress specular glare that would otherwise degrade detection accuracy while remaining compatible with the electrostatic-discharge requirements of electronics handling.
+The bins are arranged as a nine-bin grid across two tiers — three large bins on the lower tier, with three medium and three small bins above — and a fourth load receptor serves as the kit box into which the operator packs.
+[INSERT FIGURE HERE]
+Figure 3.1: The assembled physical frame and workstation, showing the overhead camera mounting position, the two-tier nine-bin grid, and the kit box consolidation area with matte ESD mat surfaces.
+[INSERT FIGURE HERE]
+Figure 3.2: Annotated photographs of the physical frame construction, including key dimensions, camera mounting height and stand-off distance, and material specifications.
+3.2 Sensors
+3.2.1 Computer Vision
+The computer-vision subsystem does not attempt to recognise individual components directly — with roughly 800 to 900 active SKUs the per-part classification burden is impractical, and item identity is instead resolved by bin position (Section 2.2, Item Identification). Vision instead answers two questions: where are the bins, and which bin is the operator reaching into. It comprises two models running concurrently on the edge device.
+The bin-boundary model is a YOLOv8-OBB (Oriented Bounding Box) object detector, trained with the Ultralytics framework and annotated and augmented in Roboflow. The model is trained to be rim-centric — keyed on the bin edges rather than the contents — so that a bin is detected reliably regardless of what, or how much, is inside it. Training data was captured across bins that were empty, partially filled, and fully filled, and with the bins permuted across grid positions (Section 4.2.1), so that the detector generalises across fill level and position rather than memorising a fixed scene.
+The hand-detection model (Google MediaPipe Hands) tracks the operator's hands using a lightweight float16-quantised model that produces 21 three-dimensional landmark coordinates per detected hand. Combined with the detected bin boundaries, this yields the worker-intention signal — which bin a hand is currently in. This signal is what the interface uses to highlight the active bin and to flag a reach into a wrong bin the moment it happens.
+The two models run together on the Jetson at approximately 30 frames per second, so the vision signal is available in real time to both the verification engine and the display.
+[INSERT FIGURE HERE]
+Figure 3.3: Sample detections from the integrated CV pipeline, showing bin boundary polygons (YOLOv8-OBB geofences) and hand landmark skeletons (MediaPipe 21-point) overlaid on the live camera feed.
+3.2.2 Load Cells
+As established in the Design Overview (Chapter 2), load cells were selected as the measurement method for quantity verification because no other approach could reliably identify components on a consistent basis across the full SKU range. This decision was further supported by the availability of a TE Connectivity component database containing reference weights and specifications for each item, allowing measured mass to be matched against known values for verification.
+The load cell platform design evolved through a structured iteration process. The initial design consisted of a cantilever platform with the load cell secured by screws and the item rest formed from bolts. However, the bolted arrangement proved unstable and required items to be placed directly onto the load cell, which was impractical for routine use. A subsequent iteration introduced a circular acrylic platform to improve stability. While this allowed a small bin to be seated securely, it remained prone to tipping when the bin's contents shifted to one side, displacing the centre of gravity beyond the platform's stable region. The final design for the small-bin platform is a circular disk providing adequate stability for the expected load distribution.
+Larger bins presented an additional challenge. Their greater footprint required a correspondingly wider platform, but single-point load cells maintain rated accuracy only within a specified distance from their centre; off-centre loading beyond this range introduces measurement error. To resolve this trade-off, a three-load-cell configuration was adopted. Distributing the load across three points ensures that the bin's centre of gravity always falls within the triangle formed by the cells, providing both mechanical stability and accurate readings. Three cells were chosen over four because a three-point arrangement guarantees simultaneous, full contact between all cells and the platform on any surface, whereas a four-cell layout is statically over-constrained and can leave one cell under-loaded if the surface is not perfectly flat.
+Furthermore, the three-load-cell configuration allows for scalability to fit the dimensions of any bins the factory uses by ensuring that the three points of contact remain within the off-centre loading limit. The system's weight constraints must also account for load cell resolution. A load cell's accuracy is specified as a percentage of its rated maximum capacity: a 1 kg load cell has a maximum capacity of 1 kg and a nominal error of ±0.5 g, while a 5 kg load cell has a corresponding larger nominal error. Because all load cells share the same physical design and form factor, they are mechanically interchangeable, allowing the appropriate capacity to be selected according to the expected item weight without modification to the platform.
+[INSERT FIGURE HERE]
+Figure 3.4: Load cell platform configurations. (a) Small bin: single 1 kg load cell with circular acrylic platform (100 mm radius). (b) Medium/large bin: three-point summed load cell triangle with triangular acrylic platform, showing the HX711 summation wiring.
+3.3 Software
+3.3.1 Software Stack
+The software stack running on the Advantech MIC-733 (Jetson AGX Orin) is structured to ensure low-latency, modular execution. The following layers comprise the complete software architecture:
+Layer
+Technology
+Purpose
+Operating System
+Ubuntu 22.04 LTS with JetPack 6.0
+Base OS with NVIDIA driver and CUDA support for the Jetson platform.
+Runtime
+Python 3.13 (Conda environment)
+Primary language runtime for all application-layer code.
+Bin Detection
+YOLOv8-OBB (Ultralytics)
+Generates oriented bounding box geofence coordinates from calibration snapshots.
+Hand Tracking
+Google MediaPipe Tasks SDK (float16)
+Tracks 21 three-dimensional hand landmark coordinates per frame.
+Image Processing
+OpenCV-Python
+Live video capture, debug overlays, drawing bin boundaries and hand skeletons.
+Backend Server
+FastAPI (Uvicorn ASGI)
+Serves REST API endpoints for the HMI and manages the shared pipeline state.
+Shared State
+Thread-safe PipelineState object
+Isolates the high-speed CV processing thread from the web server thread.
+Frontend HMI
+HTML5 / CSS3 / Vanilla JavaScript
+Operator-facing dashboard; polls the backend REST API at 10 Hz via AJAX.
+Serial Bridge
+PySerial
+Reads newline-delimited JSON weight packets from the ESP32 over USB serial.
+Microcontroller Firmware
+C++ (Arduino IDE) on ESP32
+Parses HX711 load cell bridge readings and transmits JSON weight arrays.
+
+Table 3.1: Software stack specification.
+3.3.2 Frontend
+The frontend is the operator-facing HMI: a full-screen web dashboard rendered on the workstation's touch display and served locally from the edge device. It is designed for glanceability — an operator working at production pace must absorb the current instruction, and any fault, in a fraction of a second and without reading dense text — and for a keyboard-free touch environment.
+The central element is a bin grid that mirrors the physical nine-bin layout (one row per tier), so that the on-screen position of each bin corresponds directly to its physical position. Each tile shows its identifier and a running count against target. Colour and motion encode state: the active bin pulses, completed bins turn green and freeze, and bins not part of the current order are dimmed.
+To make the operator's hand position unmistakable, the tile the operator's hand is currently over is given a bold, animated halo, colour-coded by correctness — teal when the hand is in a valid bin and red when it is in a bin the operator should not be picking from (already completed, locked out of sequence, or not in the order). A misdirected reach is therefore signalled the instant the hand enters the wrong bin, before any item is removed.
+Faults are surfaced through a full-width banner presenting a single large keyword (OVERPACK, PICKED FROM WRONG BIN, RETURNED TO WRONG BIN, OUT OF SEQUENCE) with the specific corrective action beneath it as a subtitle — naming the bin and the quantity to move — together with a direct highlight of the offending tile on the grid. A consistent red/white colour language is used across all alerts to avoid ambiguity between severities. Between sets, completion flows directly into an "empty the kit box" confirmation, and a progress indicator shows how many sets remain in the order.
+The frontend holds no state of its own: it polls the backend for the live system state and renders it, so the display is always a faithful view of the verification engine's current understanding.
+[INSERT FIGURE HERE]
+Figure 3.5: HMI screenshots. (a) Normal operation showing the bin grid with active bin pulsing and hand halo indicator. (b) Fault state showing the full-width error banner with corrective instruction. (c) Kit completion and empty-kit-box confirmation screen.
+3.3.3 Backend
+The backend runs entirely on the edge device and couples the real-time sensing pipeline to the operator display without exposing either to the other's timing. It is organised around a thread-safe shared state object: the vision and load-cell processing loop writes its latest interpretation of the scene into this object each frame, while a lightweight web server reads from it to answer requests from the frontend. This separation lets the sensing loop run at full frame rate independently of how often the display refreshes.
+The verification logic is encapsulated in a placement tracker, which implements the finite state machine of Section 2.2.3. On each update it ingests the current per-bin and kit-box weights, debounces them, and derives the discrete kitting state — which bin is active, how many items have been removed from each bin and placed into the kit, whether the order is complete, and whether any fault condition holds. The tracker is deliberately a pure, self-contained component with no direct dependency on the camera or the display, which allows it to be exercised in isolation under an automated test suite (Section 4.3).
+The web server exposes the system state to the frontend through a small set of read endpoints (bin states and counts, grid layout, kit and cycle status, and system statistics) and a few action endpoints, such as confirming that the kit box has been emptied to advance to the next set. All processing and storage are performed on-device; no production data is transmitted to external networks, satisfying the data-sensitivity constraint established in Chapter 1.
+
+Chapter 4: System Integration and Functional Testing
+This chapter documents the integration of the individually developed subsystems into a cohesive verification pipeline and presents the developer-oriented functional testing conducted to validate each component's behaviour under controlled laboratory conditions. The testing methodology separates subsystem-level characterisation from system-level validation: the former is addressed in this chapter, while the latter — encompassing user testing and requirements traceability — is presented in Chapter 5.
+4.1 System Integration Overview
+System integration is coordinated by a main pipeline orchestrator that manages the data flow between the computer vision, load cell, and HMI subsystems. During system startup, a two-snapshot calibration process establishes the spatial context for the session. The first snapshot captures the layout of the workstation to establish the grid session through the grid calibrator module, which identifies the fixed positions of the nine bin slots (six single-width top bins and three double-width bottom bins) and assigns each a unique spatial identifier. The second snapshot registers which of these slots actually contain physical bins, initialising the active geofence boundaries for the current order.
+Once boundaries are locked as polygons, the real-time processing loop executes continuously. Each iteration proceeds through the following sequence: the camera frame is captured; the hand tracker determines the 21-landmark positions for each detected hand; the bin assignment engine evaluates whether the tracked keypoint (index fingertip by default) falls within any active geofence; and simultaneously, weight data streams from the ESP32 load cell array over USB serial, parsed by the load cell reader module. The placement tracker FSM then coordinates the vision-based hand-in-bin event with the gravimetric weight delta to determine whether a valid pick-and-place action has occurred. If a hand is detected inside an active bin and the kit box weight subsequently increases by an amount consistent with the expected item weight, the count registers and the FSM state advances.
+[INSERT FIGURE HERE]
+Figure 4.1: System integration data flow diagram showing the real-time processing loop. Camera frames feed into the bin detector and hand tracker in parallel; results converge at the bin assignment engine; load cell weights feed into the placement tracker FSM; the combined state is written to the thread-safe PipelineState object and served to the HMI via FastAPI.
+4.2 Functional Testing
+4.2.1 Computer Vision
+4.2.1.1 Testing Framework
+The computer vision detector was evaluated using a layer-by-layer permutation protocol designed to test invariance to bin position, colour, and fill level. Each bin is treated as unique (distinguished by its fill level, independent of size). One bin is shifted at a time, tracking its index: bin 1 is moved and swapped one grid position at a time from left to right until it reaches the end, then bin 2 does the same, and so on, until all bins return to their initial positions. At each configuration the bins are tested empty, partially filled, and fully filled, and the protocol is repeated for each bin size (small, medium, large).
+Testing proceeded across three setup configurations, each isolating one variable:
+Group A — Bin Colour and Layout: Evaluated the effect of bin colour variation on detection accuracy. Three conditions were tested: (A1) all nine blue bins in baseline positions; (A2) red, green, and blue mixed-colour bins of varying sizes; and (A3) blue bins combined with the mixed-colour set.
+Group B — Bin Contents and Fill Levels: Tested model robustness with the bins containing different item types across three fill levels (empty, partially filled, and fully filled with items protruding above the rim). Seven item categories were tested: matte black TE connector parts; reflective metal shelf brackets; small shiny M6 cross screws; white bulky PVC pipes; long copper rods protruding above the rim; dark black bin connectors; and mixed items (two to three types together).
+Lighting Characterisation: Ambient illuminance was swept across eight levels spanning the station's full realistic range — from a fully darkened room (blinds down, all lights off) to the tunable strip light at maximum with the office lights on — with the illuminance at each of the nine bins measured by lux meter at every level, giving 72 readings in total. Taking Bin 9 as the reference, the sweep ran from approximately 0 lux to 506 lux.
+4.2.1.2 Evaluation Results
+Group A Results. Under the baseline condition (A1: all blue bins), the YOLOv8-OBB model achieved 100% detection accuracy across 20 sample frames. However, when non-blue bins were introduced (A2: mixed red/green/blue set; A3: blue bins combined with the mixed set), detection accuracy decreased to 80% and 85% respectively. Analysis of the failure cases revealed that the model produced hallucinated bounding boxes when fewer than nine bins were visible in the frame, and that the rim-centric training data — captured predominantly with blue bins — did not generalise fully to non-blue rim colours. This finding informed the decision to standardise on blue bins for the deployment configuration.
+Group B Results. Under Group B testing with standardised blue bins, the detector achieved 100% accuracy across all seven item categories at the empty fill level. The model demonstrated its rim-centric behaviour: bins were correctly localised regardless of the colour, reflectivity, shape, or protrusion of their contents. Even the hardest case — long copper rods protruding above the bin rim — was detected correctly, confirming that the model keys on the bin edges rather than the items within.
+The YOLOv8-OBB model trained with full-spectrum fill-level data (Setup V3: bins at 0%, 20%, 40%, 60%, 80%, and 100% capacity) achieved the strongest validation metrics: precision of 0.999, recall of 1.000, mAP50 of 0.995, and mAP50-95 of 0.935 at the final training epoch.
+Metric
+Value
+Precision
+0.999
+Recall
+1.000
+mAP50
+0.995
+mAP50-95
+0.935
+Training Epochs
+55 (early stopping at epoch 54)
+
+Table 4.1: YOLOv8-OBB bin detection model validation metrics (Setup V3, fullness-varied training).
+Lighting Characterisation Results. Detection held at 100% across every illuminance level and every bin: all 72 readings identified the correct bin, including at the darkest condition (approximately 0 lux). Confidence correlated only weakly with illuminance (Pearson r ≈ 0.27 linear, r ≈ 0.40 against log-lux), and the trend was non-monotonic — the dimmest level was not the worst, with a shallow dip at a low-mid level instead. The practical conclusion is that the rim-centric detector is not lighting-limited over the station's operating range, satisfying the environmental robustness requirement (FR-09). Ambient light is therefore not a variable that requires controlling in deployment, beyond the matte anti-glare surface already specified.
+[INSERT FIGURE HERE]
+Figure 4.2: Sample detections per setup group. (a) Group A baseline (all blue bins). (b) Group B with mixed items at varying fill levels. (c) Lux-versus-confidence chart showing detection confidence at each of the eight illuminance levels across all nine bins.
+4.2.2 Load Cells
+4.2.2.1 Testing Framework
+The load-cell hardware was qualified as a measurement system on the bench, independently of the verification logic, so that the counting behaviour built on top of it could be interpreted against known sensor limits. Three platform configurations were tested, matching the three bin sizes:
+Configuration
+Cells
+Wiring
+Platform Geometry
+Max Test Load
+1 kg
+1 × 1 kg
+1 HX711
+Single 100 mm-radius circle
+1,000 g
+5 kg
+3 × 5 kg
+Summed → 1 HX711
+2 × 50 mm circles + 1 apex 50 × 100 mm rectangle
+5,000 g
+10 kg
+3 × 10 kg
+Summed → 1 HX711
+2 × 50 mm circles + 1 apex 50 × 100 mm rectangle
+10,000 g
+
+Table 4.2: Load cell platform configurations.
+Each three-cell platform reports one summed weight (three bridges into a single HX711); all three cells share a rigid base and a single bin rests across all three. Test loads came from a graded reference-mass kit of individually weighed sand bags (reference scale: 1,000 g capacity, 0.1 g readability). Because that scale caps direct weighing at 1,000 g, every load above 1 kg was built by stacking individually-weighed ≤1 kg bags, carrying an accumulated ±0.1 g-per-bag uncertainty.
+The test battery was organised as Capability → Stability → Integration, with a dedicated testing firmware streaming raw CSV data (milliseconds, channel, raw reading, grams):
+Capability — A1: minimum detectable mass (noise floor and count registration); A2: repeatability (5 trials × 5 points); A3: hysteresis (up-path versus down-path).
+Stability — A4: warm-up and thermal drift (cold versus 30-minute warmed); A5: creep at two loads.
+Integration — A6: off-centre and placement sensitivity; A8: settling time.
+4.2.2.2 Evaluation Results
+Capability. The zero-noise band (standard deviation on an empty, tared cell) and the smallest reliably-separated mass both scale with platform capacity, as summarised in Table 4.3.
+Configuration
+Zero-Band σ (g)
+Min. Detectable Mass (g)
+Repeatability SD @ 50% (g)
+Max Hysteresis (g)
+1 kg (1 cell)
+0.028
+~0.5
+0.009
+0.09
+5 kg (3 cells)
+0.223
+~2.3
+1.06
+5.44
+10 kg (3 cells)
+0.433
+~4.3
+2.85
+16.99
+
+Table 4.3: Load cell capability characterisation results.
+Against the accepted reference that reliable single-pick counting requires a unit mass of ≥5–10× σ, these results quantify the light-item limit precisely: the lightest components in the BOM (~3–3.5 g) are comfortably resolved on the 1 kg platform, but sit at or below the reliable threshold on the 5 kg and 10 kg platforms. Absolute accuracy was otherwise excellent — grams-versus-reference agreed within a few tenths of a gram across the full ladder.
+Stability. Warm-up drift (A4) over 30 minutes at mid-load was ≤0.22 g on the 1 kg platform but reached approximately 6 g on the 5 kg platform, justifying the 30-minute warm-up and periodic re-taring as standard procedure. Creep (A5) stayed within approximately 0.1% of the applied load on all three configurations, so sustained load itself is not a material error source over a kitting session.
+Integration. The decisive finding for the summed three-cell platforms was off-centre placement sensitivity (A6). The 1 kg single-cell platform was essentially position-invariant (≤~0.2 g deviation across a 90 mm radius). The three-cell platforms were not: moving the same fixed mass from the calibrated centroid to directly over an individual cell or the apex shifted the summed reading by tens of grams — 5 kg: −38.6 g to +64.0 g; 10 kg: −65.8 g to +105.0 g. For the larger bins, therefore, where a component sits on the platform materially affects the reading, which bounds how finely those platforms can resolve individual picks regardless of the electronics. Settling time (A8) was 0.3–0.6 s per step at the firmware's 10 SPS.
+Implications. These metrology limits explain and bound the light-item behaviour observed at system level: the lightest components are only reliably counted on the smallest (1 kg) platform, while the medium and large three-cell platforms trade both resolution and placement-invariance for capacity. Two hardware-reliability issues were also recorded during integration: several individual channels were found reading a flat zero (disconnected cells), and the load-cell microcontroller's USB link showed intermittent resets that dropped the serial connection — both cabling/power faults rather than software.
+[INSERT FIGURE HERE]
+Figure 4.3: Load cell characterisation results. (a) Minimum detectable mass and off-centre deviation by platform configuration. (b) Full raw calibration ladders for the 1 kg, 5 kg, and 10 kg platforms.
+4.3 Backend Verification (Unit Testing)
+4.3.1 Testing Framework
+Because the verification logic is encapsulated in a pure placement-tracker component with no dependency on the camera or display (Section 3.3.3), it is tested in isolation with an automated unit-test suite implemented using the pytest framework. The suite feeds deterministic sequences of per-bin and kit-box weights and asserts the resulting state, covering: bin activation and the confirmation window; placement counting and completion; every fault type and its auto-clear; and a set of edge cases — post-tare settle windows, sensor drift, transient dips, and the light-item crediting floors derived from the qualification results in Section 4.2.2.
+4.3.2 Evaluation Results
+The test suite comprises 134 test cases distributed across 16 test modules. All 134 tests pass, locking in the intended behaviour: counts advance only on genuine kit-box placement; each fault fires on its correct condition and clears on correction; a completed bin picked from is classified as a wrong-bin error rather than out-of-sequence; and transient sensor dips no longer produce phantom count changes. Running as fast, deterministic unit tests, the suite also serves as a regression guard for future changes to the verification logic.
+Code coverage analysis was performed using pytest-cov. The results are summarised in Table 4.4.
+Module
+Statements
+Coverage
+placement.py (FSM core verification logic)
+196
+98%
+bin_assignment.py (geometric bin assignment)
+260
+83%
+occlusion_hold.py (shelf-lip occlusion handling)
+35
+100%
+grid_allocator.py (spatial grid calculations)
+107
+93%
+grid_calibrator.py (calibration verification)
+79
+96%
+grid_session.py (session boundary management)
+74
+95%
+inventory.py (weight-to-count conversion)
+45
+78%
+cycle.py (order cycle management)
+39
+100%
+Overall project
+2,569
+50%
+
+Table 4.4: Backend unit test coverage summary (134/134 tests passing).
+The 50% overall coverage figure reflects the fact that the test suite deliberately targets the pure-logic modules (placement tracker, bin assignment, grid calibration) rather than the hardware-bound modules (pipeline orchestrator, dashboard server, camera overlay) which require live peripherals. The core verification logic — the placement tracker FSM — achieves 98% statement coverage, confirming that the critical state machine pathways are exercised exhaustively.
+4.4 Developer-Phase Iterations
+4.4.1 Hardware Iteration: Load Cell Platform Redesign
+Bench testing of the load cells (Section 4.2.2) revealed that a single cantilever load cell could not support larger bins without tipping, while expanding the platform size on a single-point cell introduced extreme off-centre measurement errors. This finding drove a hardware design iteration: transitioning from a single-cell platform to a three-point summed load cell triangle for the medium and large bin configurations. This configuration stabilised the centre of gravity within the support triangle and permitted bin scaling to match the factory's bin inventory, while the HX711 summation circuit maintained a single-channel interface to the microcontroller.
+4.4.2 Software Iteration: Occlusion Gate
+During early integration testing, a critical computer vision error was identified when operators reached into the bottom row of bins. The shelf lip of the two-tier workstation rack physically occludes the operator's fingers when reaching for the lower bins. Because the MediaPipe hand tracker loses sight of the distal finger joints, it extrapolates the fingertip coordinates upward, placing the index fingertip within the geofence of the top-tier bins rather than the intended bottom-tier bin. This produced false "Out-of-Sequence" or "Wrong-Bin" alarms.
+To resolve this without modifying the workstation hardware, an Occlusion Gate was implemented within the bin assignment engine. The gate operates by verifying the position of the hand's proximal anchors — the wrist landmark and the metacarpophalangeal (MCP) knuckle centroid — which remain visible below the shelf lip even when the distal joints are occluded. When these anchor landmarks are detected at or below the bottom-bin rim boundary, the gate overrides any fingertip-derived top-bin assignment and forces the hand's assignment to the bottom bin beneath the anchors. If no bottom bin exists at that position, the event is suppressed entirely.
+Additionally, a stateful Occlusion Hold module was developed to address complete hand disappearance. When a hand that was actively picking from a bottom bin vanishes entirely behind the shelf lip (i.e., no landmarks are detected at all), the hold module maintains the last-known bottom-bin assignment for a configurable duration, releasing only when the hand reappears. Both modules are covered by the unit test suite: the occlusion gate is tested by 22 test cases and the occlusion hold by 12 test cases, all passing.
+[INSERT FIGURE HERE]
+Figure 4.4: Occlusion Gate operation. (a) Side-view diagram showing the shelf lip occluding fingertips during a bottom-bin reach. (b) Without the gate: fingertip extrapolation causes false top-bin assignment. (c) With the gate: proximal anchor detection overrides to the correct bottom bin.
+
+Chapter 5: System Testing and Evaluation
+This chapter presents the system-level validation of the integrated AEGIS prototype, focusing on user-oriented testing with plant operators, the HMI design iteration driven by operator feedback, and the formal requirements validation matrix that traces each functional requirement to its verification evidence.
+5.1 Usability Study
+5.1.1 Testing Framework
+The integrated system was evaluated through a structured usability study with six operators, conducted between 8 and 13 July 2026. The study employed a within-subjects, counterbalanced design in which each operator completed a paper-based Control block and an AEGIS System block, with three bills of materials (BOMs) per block; block order was counterbalanced across participants to control for learning effects.
+Evaluation focused on the operator's comprehension and subjective experience of the interface. Each session comprised a structured alert walkthrough, in which the operator encountered and was asked to interpret each fault type, followed by a rating interview across nine dimensions scored on a 1–5 Likert scale, and an open-ended interview capturing free-form feedback and redesign suggestions. The nine rating dimensions were chosen to separate the two functions a kitting HMI must perform well: communicating the task (what and how many to pack) and communicating exceptions (warnings, errors, and how to correct them).
+Operator
+Date
+Group
+BOM Order
+Benny
+8 Jul
+—*
+1 → 2 → 3
+Chloe
+8 Jul
+B
+2 → 3 → 1
+Ming Zhan
+8 Jul
+B
+2 → 1 → 3
+Song Yi
+9 Jul
+A
+2 → 1 → 3
+Royce
+10 Jul
+A
+3 → 2 → 1
+Jack
+13 Jul
+B
+1 → 3 → 2
+
+Table 5.1: Usability study participant schedule. *Benny's session used an earlier protocol template.
+5.1.2 Evaluation Results
+The averaged operator ratings across the nine usability dimensions are presented in Table 5.2.
+ID
+Dimension
+Mean
+Range
+n
+R1
+Screen wording was clear and easy to understand
+3.3
+2–5
+6
+R2
+Placement / layout of on-screen information was easy to follow
+4.2
+3–5
+6
+R3
+Easy to understand what to pack
+4.9
+4.5–5
+6
+R4
+Easy to understand how many to pack
+5.0
+5–5
+6
+R5
+Running count per bin helped keep track
+3.8
+1–5
+6
+R6
+Warnings / error alerts were easy to understand
+3.3
+2–5
+6
+R7
+Corrective instructions clearly explained the fix
+3.0
+1–4
+5*
+R8
+Overall trust that the system would catch mistakes
+4.0
+3–5
+6
+R9
+Overall, the system made kitting easier than without it
+4.3
+2–5
+6
+
+Table 5.2: Operator usability ratings (1 = poor/strongly disagree, 5 = excellent/strongly agree). *One operator did not trigger any errors during live runs; R7 was not scored (n = 5).
+The results reveal a clear pattern. Operators rated the system's core guidance — understanding what to pack (R3: 4.9) and how many to pack (R4: 5.0) — at or near ceiling, and the visual, position-based bin layout was repeatedly cited as the reason; the build list was the interface's unambiguous strength. The system was also rated as making kitting easier than the paper baseline (R9: 4.3), and operators expressed moderate trust in the system's ability to catch mistakes (R8: 4.0).
+The weakest dimensions concerned the communication of exceptions rather than the task itself. On-screen wording clarity (R1: 3.3), alert legibility (R6: 3.3), and — the lowest-rated dimension — the completeness of corrective instructions (R7: 3.0) all scored below the midpoint for several operators. The open-ended feedback localised these scores to the following specific issues:
+Small font size on alerts: This was the single most frequently raised complaint, reported independently by four of six operators. Representative quote: "fonts small" (Royce); "wording small" (Ming Zhan).
+Warning-versus-error differentiation: Operators could tell an alert had fired but frequently could not distinguish severity or type at a glance, compounded by inconsistent alert colours (white-on-red combined with red-on-black in different banner positions).
+Incomplete corrective instructions: The wrong-bin-return correction message did not specify how many units to return or which bin was involved. This was the lowest-rated dimension overall (R7: 3.0).
+Load-cell responsiveness on light components: Multiple operators independently reported perceived lag or missed reads on the smallest, lightest bins. Quote: "sensor doesn't detect piece sometimes, requiring extra action" (Benny).
+Consolidation friction: Emptying completed bins into the kit container was a recurring fatigue point, especially for larger bins. The on-screen "Complete Set" / "Bin Emptied" taps did not always register.
+Absence of progress indicator: Two operators independently requested a remaining-sets indicator.
+[INSERT FIGURE HERE]
+Figure 5.1: Operator rating distribution across the nine usability dimensions, showing means and ranges. Strongest dimensions: R3 and R4 (task guidance). Weakest dimensions: R1, R6, and R7 (exception communication).
+5.2 User-Facing HMI Iteration
+The qualitative and quantitative findings from the usability study (Section 5.1) directly drove a targeted iteration of the frontend HMI. The changes were prioritised by frequency of operator complaint and by their mapping to the lowest-rated dimensions. The following modifications were implemented:
+Enlarged alert typography: Font sizes for all warning and error banners were increased by approximately 50%, directly addressing the most frequently raised complaint (small font, reported by 4/6 operators).
+Unified fault banner: The previous dual-banner layout (top and bottom of screen) was consolidated into a single, full-width banner at the top of the display. The banner presents a single keyword (e.g., "WRONG BIN") with the specific corrective action as a subtitle naming the bin and the quantity to move, in a consistent red/white colour scheme.
+Explicit corrective prompts: The wrong-bin-return alert was updated to compute and display the exact correction required, specifying the destination bin and the number of units to return. This directly addresses the lowest-rated dimension (R7: 3.0).
+Fault reclassification: A completed bin picked from is now classified as a wrong-bin error rather than an out-of-sequence error, which operators found more intuitive.
+Bold, colour-coded hand-in-bin halo: The hand position indicator was enhanced with an animated halo, colour-coded teal for valid bins and red for invalid bins.
+Automatic completion-to-empty flow: The unreliable manual "Bin Emptied" confirmation tap was replaced with automatic detection via load cell weight change, eliminating touch-registration issues reported by two operators.
+1-indexed bin and layer labels: Bin identifiers were changed from 0-indexed to 1-indexed to match operator expectations.
+Remaining-sets progress indicator: A visible indicator of sets remaining in the order was added to the HMI, addressing the unprompted request from two operators.
+[INSERT FIGURE HERE]
+Figure 5.2: HMI before and after the user-driven iteration. (a) Pre-iteration: small font error banners, dual-position alerts, 0-indexed bin labels. (b) Post-iteration: enlarged single banner with explicit corrective instruction, colour-coded hand halo, 1-indexed labels, and sets-remaining indicator.
+5.3 Requirements Validation
+To formally evaluate system compliance, the integrated prototype was validated against each functional requirement defined in Section 1.5. The results are summarised in Table 5.3. Requirements marked as "Met" have been verified through the testing evidence documented in Chapters 4 and 5. Requirements marked as "Partially Met" identify specific boundary conditions where the current prototype does not fully satisfy the requirement, with the nature and extent of the gap documented.
+ID
+Requirement
+Status
+Verification Evidence and Rationale
+FR-01
+Component Identification
+Met
+YOLOv8-OBB localises bin boundaries; the inventory engine maps live weight changes to active SKU specifications via bin-position identity.
+FR-02
+Wrong Part Detection
+Met
+The FSM immediately triggers a wrong-bin alert when hand tracking registers access to an inactive or completed bin, preventing count accumulation.
+FR-03
+Missing Part Detection
+Met
+The FSM prevents kit completion and blocks the KIT_COMPLETE state if any required SKU remains below its target count.
+FR-04
+Quantity Verification
+Partially Met
+Met for components >5 g. For light components (<3.5 g) on 5 kg/10 kg summed platforms, off-centre sensitivity and noise floors occasionally cause missed counts. Mitigated by assigning light items to 1 kg platforms (σ = 0.028 g).
+FR-05
+Real-Time Alerting
+Met
+End-to-end latency <80 ms (33 ms CV frame + 10 Hz REST polling). Alerts appear on-screen before the operator completes the reach.
+FR-06
+Corrective Guidance
+Met
+Resolved in the HMI iteration (Section 5.2): alerts now display the specific bin, error type, and required corrective action.
+FR-07
+Order Integration
+Met
+The system parses order configurations in YAML format and configures FSM bin locks and target counts accordingly.
+FR-08
+New Part Onboarding
+Met
+Dynamic OBB calibration eliminates manual coordinate mapping. Adding new SKUs requires only updating weight specifications in the inventory configuration file.
+FR-09
+Environmental Robustness
+Met
+100% CV detection from 0 to 506 lux (Section 4.2.1). Anti-glare ESD mats eliminate reflection errors. No workstation modification required.
+FR-10
+Supervisor Visibility
+Met
+The FastAPI web server hosts live state queries accessible over the local intranet; supervisors can view any workstation remotely.
+FR-11
+Scalability
+Met
+The thread-safe PipelineState architecture and low CPU utilisation (one of twelve cores) support multi-station extension without per-station redesign.
+
+Table 5.3: Requirements validation matrix. Green (Met) indicates full compliance; Yellow (Partially Met) indicates a boundary condition where the requirement is not fully satisfied, with the mitigation strategy documented.
+
+Chapter 6: Conclusion and Future Works
+6.1 Summary
+The AEGIS prototype demonstrates a proof-of-concept, edge-deployed kitting-assistance system that addresses the operational gap identified in Chapter 1: the absence of real-time, part-specific error detection and corrective guidance at the manual kitting workstation. By combining computer vision (rim-centric bin detection and hand-based worker-intention tracking) with load-cell gravimetric verification, and by enforcing a sequential single-bin finite state machine, the system detects wrong-bin, out-of-sequence, quantity, and overpack errors at the moment they occur and guides the operator to correct them before the kit is completed — satisfying the core functional requirements (FR-02, FR-04, FR-05, FR-06) while running entirely on-device and augmenting, rather than replacing, the existing manual workflow.
+The prototype was validated across its three subsystems. The vision model was shown to be rim-centric — detecting bins independently of their contents — and to hold 100% detection from near-darkness to full office lighting (0 to 506 lux), satisfying FR-09. The load-cell platforms were qualified as a measurement system, establishing their minimum detectable mass (0.5 g / 2.3 g / 4.3 g for the 1 kg / 5 kg / 10 kg configurations) and, critically, the off-centre placement sensitivity of the summed three-cell platforms — limits that bound which components can be reliably counted on which bins. A six-operator user study confirmed that the system communicates the task exceptionally well (what and how many to pack rated at ceiling) and is preferred over the paper baseline, while surfacing concrete interface weaknesses that a subsequent iteration addressed. The backend verification logic is locked by 134 passing unit tests with 98% coverage of the core FSM module.
+Following successful laboratory validation and the user-driven HMI redesign, TE Connectivity is considering implementing the AEGIS solution design in their industrial sandbox environment for operational testing. This sandbox trial will validate the system's long-term hardware reliability and operational effectiveness under continuous shift conditions.
+6.2 Scalability and Maintenance
+For the system to scale across manufacturing lines, maintenance procedures must remain accessible to plant engineers without requiring specialist machine learning or software expertise. The following design provisions support this:
+SKU Onboarding: Introducing a new component to the system does not require retraining any machine learning model. A technician needs only to weigh the new component and add its unit weight to the central inventory configuration file (YAML format). The bin-position identification approach means that no per-component visual model is needed.
+Station Calibration: A workstation can be calibrated in less than two minutes using the two-snapshot YOLOv8-OBB process, which automatically defines the bin geofences from the live camera feed without manual coordinate entry.
+Modular Hardware: Load cell mounts are mechanically standardised. A failed cell can be replaced by removing four screws and swapping in a replacement of the same capacity, without changes to the frame, platform, or wiring.
+Multi-Workstation Architecture: The system architecture leaves substantial compute headroom — the full pipeline occupies roughly one of the edge device's twelve cores — supporting the intended multi-workstation extension (FR-11) without per-station redesign. Linking local FastAPI instances to a centralised factory supervisor dashboard would enable cross-line monitoring.
+6.3 Ergonomic Considerations
+While ergonomic design was not a primary focus of the prototype, the usability study surfaced two physical-interaction issues that should be addressed prior to sandbox deployment:
+Consolidation Fatigue: Operators reported that physically lifting and dumping heavy completed bins into the kit container was tiring, particularly for the larger bins. Potential mitigations include replacing standard bins with tilting bin racks or gravity-fed slide-out chutes that allow components to transfer without manual lifting.
+Standing Fatigue: Operators spend extended periods standing during kitting shifts. Incorporating a scheduled break reminder into the HMI (e.g., suggesting a short rest period after every ten completed sets, as one operator recommended) would help maintain operator attention and reduce fatigue.
+6.4 Future Works
+Several directions for future development are identified. First, multi-workstation orchestration would be enabled by linking the local FastAPI instances across multiple edge devices to a centralised factory supervisor dashboard, permitting real-time monitoring of all kitting lines from a single interface. Second, integration with TE Connectivity's Manufacturing Execution System (MES) via Modbus TCP communications would automate work-order loading and provide bidirectional status reporting, eliminating manual order entry. Third, the partial-met status of FR-04 (quantity verification for light components) suggests investigating higher-resolution load cells or supplementary counting methods (e.g., capacitive proximity sensing) for the lightest SKUs. Fourth, the YOLOv8-OBB model's reduced accuracy on non-blue bin colours (Section 4.2.1) could be addressed by expanding the training dataset to include a wider range of bin colours and form factors.
+
+Chapter 7: Reflections and Lessons Learned
+Several lessons emerged over the course of the project.
+Sensor limits shape the design. The single hardest problem was not software but the physics of gravimetric sensing. The qualification battery put numbers on it: a minimum detectable mass of approximately 0.5 g on the 1 kg platform but approximately 2.3 g and 4.3 g on the 5 kg and 10 kg platforms, and off-centre deviations of tens of grams on the summed three-cell platforms. Since the lightest components in the BOM weigh only approximately 3 g, those numbers — not the code — set the ceiling on what can be counted where. The lesson was to characterise the sensor early and design around its limits, combining software mitigations (absolute-gram crediting floors, debounce windows) with operational ones (assigning light items to the smallest platform) rather than expecting the code to overcome physics.
+User testing revealed what builders could not see. Features that were obvious to the development team — alert wording, colour coding, corrective phrasing — were the very things operators struggled with, while the parts considered basic (the bin grid layout) rated at ceiling. The study turned subjective impressions into a prioritised backlog and directly shaped a better interface. Testing with real operators earlier in the development cycle would have caught these issues sooner and reduced rework.
+Clean separation paid off. Encapsulating the verification logic as a pure, hardware-independent component made it possible to test the FSM exhaustively (134 test cases, 98% coverage of the core module) and iterate on it with confidence, without a physical rig in the loop. This architectural decision substantially accelerated development velocity and provided a reliable regression guard.
+Real-world robustness matters. Intermittent USB resets and disconnected load cells were a reminder that a laboratory prototype meets messy hardware realities in deployment. Reliability and diagnosability deserve dedicated design attention — automated reconnect loops, sensor health checks, and clear diagnostic logging — not just the happy path.
+[Individual team member reflections to be added here.]
+
+References
+[1]  Ultralytics, "YOLOv8 Documentation," 2024. [Online]. Available: https://github.com/ultralytics/ultralytics. [Accessed: Jul. 2026].
+[2]  Google, "MediaPipe Hands: On-device Real-time Hand Tracking," 2023. [Online]. Available: https://developers.google.com/mediapipe/solutions/vision/hand_landmarker. [Accessed: Jul. 2026].
+[3]  TE Connectivity, "Cost of Poor Quality (COPQ) Internal Manufacturing Reports," FY2025. Unpublished.
+[4]  Avia Semiconductor, "HX711: 24-Bit Analog-to-Digital Converter for Weigh Scales," Datasheet Rev. 1.0.
+[5]  Advantech, "MIC-733: AI Inference System Based on NVIDIA Jetson AGX Orin," Product Datasheet, 2024.
+[6]  NVIDIA, "Jetson AGX Orin Technical Reference Manual," 2023.
+[7]  Roboflow, "Computer Vision Annotation and Dataset Management Platform," 2024. [Online]. Available: https://roboflow.com.
+[8]  Espressif Systems, "ESP32 Series Datasheet," Version 4.2, 2023.
+
+Appendix
+Appendix A: Usability Study Raw Data
+Full logs from the usability testing sessions conducted between 8 and 13 July 2026, including per-operator Likert scale ratings, alert walkthrough transcripts, and open-ended feedback summaries for all six participants (Benny, Chloe, Ming Zhan, Song Yi, Royce, and Jack). Source document: AEGIS_User_Test_Findings_Summary.docx.
+Appendix B: Load Cell Qualification Data
+Full raw voltage readings, calibration ladder values, repeatability trial tables, hysteresis measurements, warm-up drift logs, creep logs, and off-centre deviation measurements for the 1 kg, 5 kg, and 10 kg platform configurations. Source document: AEGIS_LoadCell_Qualification.docx.
+Appendix C: Computer Vision Training and Evaluation Data
+YOLOv8-OBB training curves and final validation metrics (precision, recall, mAP50, mAP50-95) for the fullness-varied Setup V3 model. Lighting characterisation workbook: 72 bin-by-illuminance readings with detection confidence values. Source files: lighting_cv_test_backup.xlsx, AEGIS_CV_Test_Pack.xlsx.
+Appendix D: HMI Screenshots
+[INSERT FIGURE HERE]
+Figure A.1: Pre-iteration HMI showing the bin grid, small-font error banners, and 0-indexed bin labels.
+[INSERT FIGURE HERE]
+Figure A.2: Post-iteration HMI showing the redesigned fault banner, colour-coded hand halo, 1-indexed labels, and sets-remaining progress indicator.
+Appendix E: Unit Test Summary
+Full pytest output for the 134-test backend verification suite, including per-module pass counts and pytest-cov coverage report.
