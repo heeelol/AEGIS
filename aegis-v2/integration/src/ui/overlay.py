@@ -189,14 +189,20 @@ class OverlayUI:
         # Draw keypoints
         for lm in lms:
             cv2.circle(img, (int(lm.x), int(lm.y)), 4, point_color, -1)
+            if lm.name in ("index_tip", "middle_tip"):
+                # Annotate confidence for decision fingertips (used in finger-vote)
+                prefix = "idx:" if lm.name == "index_tip" else "mid:"
+                cv2.putText(img, f"{prefix}{lm.confidence:.2f}", (int(lm.x) + 8, int(lm.y) - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
 
-        # Draw bounding box with handedness label
+        # Draw bounding box with handedness label and confidence
         bbox = getattr(hand, "bounding_box", None)
         if bbox:
             bx1, by1, bx2, by2 = [int(v) for v in bbox]
             cv2.rectangle(img, (bx1, by1), (bx2, by2), skel_color, 1)
 
-            label = hand.handedness.upper()
+            hand_conf = getattr(hand, "confidence", 1.0)
+            label = f"{hand.handedness.upper()} ({hand_conf:.2f})"
 
             cv2.putText(img, label, (bx1, by1 - 8),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, skel_color, 2)

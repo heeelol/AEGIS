@@ -38,6 +38,7 @@ class HandDetection:
     bounding_box: tuple[float, float, float, float] | None = None  # x1,y1,x2,y2
     is_grabbing: bool = False
     grab_score: float = 0.0
+    confidence: float = 1.0
 
     def get_landmark(self, name: str) -> HandLandmark | None:
         """Look up a landmark by name (e.g. 'index_tip')."""

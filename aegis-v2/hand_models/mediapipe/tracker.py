@@ -135,6 +135,7 @@ class MediaPipeTracker(BaseHandTracker):
                 or getattr(cat, "display_name", None)
                 or "unknown"
             ).lower()
+            hand_confidence = float(cat.score) if cat is not None else 1.0
 
             # Bounding box
             xs = [l.x for l in landmarks]
@@ -157,6 +158,7 @@ class MediaPipeTracker(BaseHandTracker):
                 bounding_box=bbox,
                 is_grabbing=is_grabbing,
                 grab_score=grab_score,
+                confidence=hand_confidence,
             ))
 
         return detections

@@ -918,6 +918,18 @@ class Pipeline:
             if self._rotate_180:
                 frame = cv2.rotate(frame, cv2.ROTATE_180)
 
+            # Check for laptop snapshot request (file-based trigger)
+            if frame_count % 10 == 0:
+                trigger_path = _ROOT / "tools" / "Dev_test_data" / ".snap_trigger"
+                if trigger_path.exists():
+                    try:
+                        out_path = _ROOT / "tools" / "Dev_test_data" / "latest_snap.jpg"
+                        cv2.imwrite(str(out_path), frame)
+                        trigger_path.unlink()
+                        logger.info("Triggered snapshot saved to %s", out_path)
+                    except Exception as e:
+                        logger.error("Failed to save triggered snapshot: %s", e)
+
             if frame_count % self._detect_every == 0:
                 hands = self._hand_tracker.detect(frame)
 
