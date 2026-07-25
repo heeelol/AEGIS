@@ -1,0 +1,113 @@
+[ 119] [normal              ] Chapter 4: Testing, Evaluation and Iterations
+[ 120] [normal              ] 4.1 System Integration
+[ 122] [normal              ] 4.2 Sensors
+[ 123] [normal              ] 4.2.1 Computer Vision
+[ 124] [normal              ] 4.2.1.1 Testing Framework
+[ 125] [normal              ] The CV detector was evaluated using a layer-by-layer permutation protocol designed to test invariance to bin position, colour, and fill level. Testing proceeded across three setup groups, each isolating one variable. The test conditions are summarised in Table 4.1.
+[ 126] [normal              ] Table 4.1: CV testing conditions.
+[ 127] [normal              ] [INSERT FIGURE HERE]
+[ 128] [normal              ] Figure 4.3: CV test setups. (a) Group A baseline with all blue bins. (b) Group A2 with mixed colours. (c) Group B with varied items at different fill levels. (d) Lighting sweep setup with lux meter.
+[ 129] [normal              ] 4.2.1.2 Evaluation Results
+[ 130] [normal              ] Group A Results
+[ 131] [normal              ] Under condition A1 (all blue bins), the model achieved 100% detection across 20 sample frames. When non-blue bins were introduced under conditions A2 and A3, detection accuracy decreased to 80% and 85% respectively, as shown in Figure 4.4. Analysis of the failure cases revealed hallucinated bounding boxes when non-blue rims were present. This finding informed the decision to standardise on blue bins for the deployment configuration.
+[ 132] [normal              ] [INSERT FIGURE HERE]
+[ 133] [normal              ] Figure 4.4: Group A detection results. (a) A1: 100% detection. (b) A2: hallucinated bounding box example. (c) Accuracy comparison across the three conditions.
+[ 134] [normal              ] Group B Results
+[ 135] [normal              ] With standardised blue bins, detection held at 100% across all seven item categories at every fill level, including copper rods protruding above the bin rim, as shown in Figure 4.5. This confirms that the model is rim-centric and content-invariant.
+[ 136] [normal              ] [INSERT FIGURE HERE]
+[ 137] [normal              ] Figure 4.5: Group B sample detections across item categories and fill levels.
+[ 138] [normal              ] Model Validation Metrics
+[ 139] [normal              ] The fullness-varied model (Setup V3) achieved the validation metrics shown in Table 4.2. Training curves are presented in Figure 4.6.
+[ 140] [normal              ] Table 4.2: YOLOv8-OBB validation metrics (Setup V3).
+[ 141] [normal              ] [INSERT FIGURE HERE]
+[ 142] [normal              ] Figure 4.6: Training curves for Setup V3, showing loss convergence and mAP over epochs.
+[ 143] [normal              ] Lighting Characterisation
+[ 144] [normal              ] Detection held at 100% across all 72 readings, including near-darkness at approximately 0 lux. As shown in Figure 4.7, confidence correlated weakly with illuminance (Pearson r = 0.27 linear, r = 0.40 log-lux) and the trend was non-monotonic. The practical conclusion is that the rim-centric detector is not lighting-limited over the station's operating range, satisfying FR-09.
+[ 145] [normal              ] [INSERT FIGURE HERE]
+[ 146] [normal              ] Figure 4.7: Lighting characterisation results. (a) Lux readings across 9 bins at 8 levels. (b) Confidence versus illuminance scatter plot with regression lines. (c) Sample detections at approximately 0 lux and 506 lux.
+[ 147] [normal              ] 4.2.2 Load Cells
+[ 148] [normal              ] 4.2.2.1 Testing Framework
+[ 149] [normal              ] The load-cell subsystem underwent a structured measurement-system qualification, conducted independently of the computer-vision and UI subsystems and prior to full-system integration testing. The qualification was structured across three tiers: Capability (whether the platform resolves the masses at stake), Stability (whether the reading holds over time), and Integration (behaviour under off-centre, freehand loading).
+[ 150] [normal              ] Platforms under test.
+[ 151] [normal              ] For the 5 kg and 10 kg platforms, three individual load cells share one rigid base and one bin, with bridge outputs summed in hardware ahead of the HX711 — each platform reports one combined weight, not three independent readings.
+[ 152] [normal              ] Load cell hardware. All cells are YZC-133 strain-gauge load cells (rated 1–10 kg depending on configuration), each platform paired with one HX711 24-bit ADC. The performance figures below are published by the component supplier; they are not corroborated by an independent manufacturer datasheet, and are used in this report only as an engineering reference point for interpreting measured results:
+[ 153] [normal              ] Reference equipment. Loads were verified against a 1000 g-capacity, 0.1 g-readability reference scale, using a graded reference-mass kit of individually-weighed sand bags labelled with actual (not nominal) mass. Loads above 1000 g were built by stacking multiple weighed bags, so the ±0.1 g uncertainty per bag accumulates with stack size. The reference scale's 0.1 g readability also sets a practical floor of roughly 0.5 g on how finely the 1 kg platform's low end could be verified.
+[ 154] [normal              ] Test scope. The full battery below was run on one representative unit per configuration, reflecting a qualify-then-replicate sequence: each platform design was validated on a single built unit first; only once that unit demonstrated sufficient performance were the remaining two units of each configuration built and brought into service.
+[ 155] [normal              ] Test protocol summary.
+[ 156] [normal              ] Test A7 does not appear in the underlying qualification data and is intentionally absent from this report.
+[ 157] [normal              ] Interpreting results against a target. The YZC-133 figures above are per-cell and supplier-published, not independently verified, so they are used below only as an approximate reference — scaled to each platform's rated full-scale (F.S.) capacity. This matters most for the 5 kg and 10 kg platforms: the spec characterises one cell in isolation, while these platforms sum three cells into a single reading, so combined error is not guaranteed to track a single cell's rated tolerance. Legal-for-trade frameworks (e.g., OIML R76) were considered as an alternative benchmark but set aside, consistent with the project's position that AEGIS targets industrial-adequate accuracy, not certified legal-for-trade metrology.
+[ 159] [normal              ] 4.2.2.2 Evaluation Results
+[ 160] [normal              ] Capability
+[ 161] [normal              ] A1 — Minimum detectable mass. The smallest mass reliably separated from the zero-noise band was ~0.5 g (1 kg platform), ~2.3 g (5 kg), and ~4.3 g (10 kg). Using the informal heuristic that reliable single-pick counting needs unit mass ≥5–10× the zero-band σ (σ = 0.028 / 0.223 / 0.433 g respectively), the 1 kg platform's floor sits inside that range (0.14–0.28 g); the 5 kg and 10 kg platforms' measured floors sit at or just above the upper bound of their equivalent ranges (1.1–2.2 g and 2.2–4.3 g).
+[ 162] [normal              ] A2 — Repeatability. Against the scaled per-cell targets (0.5 g / 2.5 g / 5.0 g):
+[ 163] [normal              ] The 5 kg, 75% row uses a corrected value: Trial 4 was logged as 2751.151 g, inconsistent with the other four trials (~3750 g) and the row's own printed mean/SD; the confirmed correct value of 3751.151 g is used above.
+[ 164] [normal              ] The 1 kg platform stays within target at every load level tested. The 5 kg and 10 kg platforms sit close to or within target at 50%, then exceed it at 75–100%.
+[ 165] [normal              ] A3 — Hysteresis. Max |up − down| deviation: 0.087 g (1 kg, at 500 g), 5.44 g (5 kg, at 2500 g), 16.99 g (10 kg, at 7500 g) — against scaled targets of 0.5 g, 2.5 g, and 5.0 g respectively.
+[ 166] [normal              ] Stability
+[ 167] [normal              ] A4 — Warm-up drift. All three configs shown at matched timestamps (5 kg/10 kg were logged at coarser 10-minute intervals in the source data; the 1 kg series is shown at the same four points for a fair comparison):
+[ 168] [normal              ] Corrected: the source data listed +0.90 g drift at this point, inconsistent with the reading itself; the reading (5009.76 g) was confirmed correct, giving a drift of −0.10 g.
+[ 169] [normal              ] None of the three platforms show a clear plateau within the 30-minute window: the 1 kg and 10 kg platforms are still trending at t=30; the 5 kg platform's apparent easing between t=20 and t=30 is based on only two points past its peak.
+[ 170] [normal              ] A5 — Creep. At 100% load: 1 kg = +0.055% (+0.55 g) over 15 min; 5 kg = +0.035% (+1.76 g); 10 kg = −0.058% (−5.80 g). These figures are not directly comparable to the supplier's creep spec, which is rated over a 3-minute window rather than the 15 minutes tested here.
+[ 171] [normal              ] Integration
+[ 172] [normal              ] A6 — Off-centre / placement sensitivity.
+[ 173] [normal              ] For the 10 kg platform, the largest deviation occurred at the seam between cells A and B rather than directly over a single cell; the test mass used was larger than the individual load platform it was placed on, so at that position it likely bridged more than one cell rather than resting cleanly on one.
+[ 174] [normal              ] A8 — Settling time. All three platforms settled in under 1 second at every step size tested (1 kg: ~0.4 s; 5 kg: 0.4–0.6 s; 10 kg: 0.4–0.6 s, increasing modestly with step size).
+[ 175] [normal              ] Observed pattern
+[ 176] [normal              ] Across A2, A3, and A6, a consistent pattern is present in the data: the single-cell 1 kg platform stays within its scaled per-cell tolerance across every metric tested; the two summed 3-cell platforms (5 kg, 10 kg) track close to or within the naive per-cell target at low-to-mid load, then diverge further from it as load approaches full scale. Since A2's freehand lift-and-replace protocol does not fix exactly where on the platform a bin lands, the placement sensitivity measured directly in A6 is a plausible contributor to the repeatability and hysteresis figures seen at higher loads on the two summed platforms.
+[ 177] [normal              ] 4.3 Backend Verification (Unit Testing)
+[ 178] [normal              ] 4.3.1 Testing Framework
+[ 179] [normal              ] The verification logic is encapsulated as a pure, hardware-independent placement-tracker component (Section 3.3.3), enabling isolated testing with deterministic inputs. The pytest suite feeds per-bin and kit-box weight sequences into the tracker and asserts the resulting FSM state at each step. Test cases cover the following categories:
+[ 180] [normal              ] Bin activation and debounce confirmation window.
+[ 181] [normal              ] Placement counting, target-reached completion, and bin banking.
+[ 182] [normal              ] All four fault types (Overpack, Out-of-Sequence, Wrong-Bin, Returned-to-Wrong-Bin) and their auto-clear conditions.
+[ 183] [normal              ] Edge cases: post-tare settle windows, sensor drift compensation, transient dips, and light-item crediting floors derived from the qualification results in Section 4.2.2.
+[ 184] [normal              ] 4.3.2 Evaluation Results
+[ 185] [normal              ] All 134 test cases across 16 modules pass. Coverage results are presented in Table 4.6 and Figure 4.11.
+[ 186] [normal              ] Table 4.6: Unit test coverage summary (134/134 passing).
+[ 187] [normal              ] The 50% overall figure reflects deliberate targeting of pure-logic modules. Hardware-bound modules such as the pipeline orchestrator, dashboard server, and camera overlay require live peripherals and are not included. The core FSM module achieves 98% statement coverage, confirming that the critical state machine pathways are exercised exhaustively.
+[ 188] [normal              ] [INSERT FIGURE HERE]
+[ 189] [normal              ] Figure 4.11: (a) Pytest terminal output showing 134/134 tests passing. (b) Coverage report summary for the core verification modules.
+[ 190] [normal              ] 4.4 Developer-Phase Iterations
+[ 191] [normal              ] Two significant iterations arose from the functional testing phase. Both follow a structured gap-to-solution-to-validation pattern.
+[ 192] [normal              ] 4.4.1 Hardware Iteration: Load Cell Platform Redesign
+[ 193] [normal              ] Gap: Bench testing revealed that a single cantilever load cell could not support larger bins without tipping, while expanding the platform on a single-point cell introduced extreme off-centre measurement errors [Table 4.5].
+[ 194] [normal              ] Solution: The platform was redesigned as a three-point summed load cell triangle for medium and large bin configurations. This configuration stabilises the centre of gravity within the support triangle while the HX711 summation circuit maintains a single-channel interface to the microcontroller, preserving full software compatibility.
+[ 195] [normal              ] [INSERT FIGURE HERE]
+[ 196] [normal              ] Figure 4.12: Load cell platform evolution. (a) Initial single-cell cantilever platform exhibiting tipping instability. (b) Final three-point triangle configuration with stable bin seating.
+[ 197] [normal              ] 4.4.2 Software Iteration: Occlusion Gate
+[ 198] [normal              ] Gap: During integration testing, a critical computer vision error was identified when operators reached into the bottom row of bins. The shelf lip of the two-tier rack physically occludes the operator's fingertips, causing MediaPipe to extrapolate the index fingertip upward into the geofence of the top-tier bins. This produced false "Out-of-Sequence" and "Wrong-Bin" alarms, as illustrated in Figure 4.13a-b.
+[ 199] [normal              ] Solution: An Occlusion Gate was implemented within the bin assignment engine. The gate verifies the position of the hand's proximal anchors, specifically the wrist landmark and the metacarpophalangeal (MCP) knuckle centroid, which remain visible below the shelf lip even when the distal joints are occluded. When these anchors are detected at or below the bottom-bin boundary, the gate overrides any fingertip-derived top-bin assignment and forces the hand's assignment to the correct bottom bin [Figure 4.13c].
+[ 200] [normal              ] A stateful Occlusion Hold module was additionally developed to address complete hand disappearance. When a hand that was actively picking from a bottom bin vanishes entirely behind the shelf lip, the hold module maintains the last-known bottom-bin assignment for a configurable timeout (default: 500 ms), releasing only when the hand reappears.
+[ 201] [normal              ] Both modules are fully covered by the unit test suite: 22 test cases for the gate and 12 for the hold, all passing. The combined effect of these two modules eliminated the false-alarm issue entirely in subsequent integration testing.
+[ 202] [normal              ] [INSERT FIGURE HERE]
+[ 203] [normal              ] Figure 4.13: Occlusion Gate operation. (a) Side-view schematic showing the shelf lip occluding fingertips during a bottom-bin reach. (b) Without the gate: fingertip extrapolation causes false top-bin assignment. (c) With the gate: proximal anchor detection overrides to the correct bottom bin.
+[ 205] [normal              ] Chapter 5: User Testing & Validation
+[ 206] [normal              ] This chapter presents system-level validation of the integrated prototype, comprising a user study with six operators, the HMI iteration driven by their feedback, and the formal requirements validation matrix.
+[ 207] [normal              ] 5.1 Usability Study
+[ 208] [normal              ] 5.1.1 Testing Framework
+[ 209] [normal              ] The integrated system was evaluated through a structured usability study with six operators conducted between 8 and 13 July 2026. The study employed a within-subjects, counterbalanced design in which each operator completed a paper-based Control block and an AEGIS System block with three bills of materials (BOMs) per block. Block order was counterbalanced across participants to control for learning effects. The participant schedule is shown in Table 5.1.
+[ 210] [normal              ] Each session comprised three phases: (1) a structured alert walkthrough across all four fault types, (2) a rating interview across nine dimensions scored on a 1 to 5 Likert scale, and (3) an open-ended interview capturing free-form feedback and redesign suggestions. The nine rating dimensions were selected to separate the two functions a kitting HMI must perform: communicating the task (what and how many to pack) and communicating exceptions (warnings, errors, and corrective instructions).
+[ 211] [normal              ] Table 5.1: Participant schedule and counterbalancing.
+[ 212] [normal              ] [INSERT FIGURE HERE]
+[ 213] [normal              ] Figure 5.1: Usability study setup. (a) Operator interacting with the AEGIS system during a kitting task. (b) Paper-based control condition. (c) Interview setup.
+[ 214] [normal              ] 5.1.2 Evaluation Results
+[ 215] [normal              ] The averaged operator ratings across the nine usability dimensions are presented in Table 5.2. The distribution of individual ratings is shown in Figure 5.2.
+[ 216] [normal              ] Table 5.2: Operator ratings (1 = poor/strongly disagree, 5 = excellent/strongly agree). *One operator did not trigger any errors during live runs; R7 was not scored (n = 5).
+[ 217] [normal              ] [INSERT FIGURE HERE]
+[ 218] [normal              ] Figure 5.2: Rating distribution across the nine dimensions, showing means and individual data points.
+[ 219] [normal              ] Task guidance dimensions rated at or near ceiling: understanding what to pack (R3: 4.9) and how many to pack (R4: 5.0). The position-based bin grid was consistently cited in open-ended feedback as the primary reason for this strong performance. Overall, operators preferred AEGIS over the paper baseline (R9: 4.3).
+[ 220] [normal              ] The weakest dimensions concerned exception communication rather than task communication. Analysis of the open-ended feedback identified six specific usability gaps, as summarised in Table 5.3.
+[ 221] [normal              ] Table 5.3: Usability gaps identified from operator feedback.
+[ 222] [normal              ] 5.2 User-Facing HMI Iteration
+[ 223] [normal              ] To address the usability gaps identified in Table 5.3, a targeted HMI iteration was implemented. Table 5.4 maps each gap to the specific change applied, and Figure 5.3 shows the interface before and after the iteration.
+[ 224] [normal              ] Table 5.4: HMI iteration changes mapped to usability gaps.
+[ 225] [normal              ] [INSERT FIGURE HERE]
+[ 226] [normal              ] Figure 5.3: HMI before and after the user-driven iteration. (a) Pre-iteration: small-font alerts, dual banners, 0-indexed labels, no progress indicator. (b) Post-iteration: enlarged single-banner fault display with explicit corrective prompt, colour-coded hand halo, 1-indexed labels, and sets-remaining progress indicator.
+[ 227] [normal              ] 5.3 Requirements Validation
+[ 228] [normal              ] The integrated prototype was validated against each functional requirement defined in Section 1.5. Results are summarised in Table 5.5. Requirements marked "Met" have been verified through the testing evidence documented in Chapters 4 and 5. Requirements marked "Partially Met" identify boundary conditions with documented mitigation strategies.
+[ 229] [normal              ] Table 5.5: Requirements validation matrix.
+[ 231] [normal              ] Chapter 6: Future Works and Conclusion
+[ 232] [normal              ] Chapter 7: Reflections and Lessons Learned
+[ 233] [normal              ] References
+[ 234] [normal              ] Appendix
+[ 236] [normal              ] Appendix A: Workstation Set-up

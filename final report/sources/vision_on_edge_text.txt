@@ -1,0 +1,4290 @@
+
+============================================================
+PAGE 1
+============================================================
+ 
+IS-301: Vision on the Edge (VOTÉ) 
+ 
+CDE3301 Final Report 
+AY 2024/25 
+ 
+Name 
+Matric Number 
+Teh Wei Sheng 
+A0276148W 
+Wong Weng Hong 
+A0272156E 
+Song Cheng Yan 
+A0276267R 
+Lim Wei Jian 
+A0276278M 
+Tan Ping Hui 
+A0272169X 
+ 
+ 
+
+============================================================
+PAGE 2
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Acknowledgements    
+We would like to express our heartfelt appreciation to the Engineering Design and 
+Innovation Centre (EDIC) department for providing us with the funding and opportunity 
+to undertake this project. We are especially grateful to the EDIC staff—Ms. Tan Annie, 
+Mr. Patrick, Ms. Mei Yin, and Ms. Yee Teng—for their dedicated support in 3D printing, 
+procuring essential components, offering technical advice, and providing development 
+space, all of which were instrumental to our progress. Our sincere thanks also go to 
+Instructor Eugene Ee and Professor Chan Tong Leong for their unwavering mentorship, 
+continuous guidance, and insightful advice. We would also like to acknowledge our 
+fellow peers in the Smart Solutions Studio for their camaraderie and collaboration as we 
+tackled challenges together. 
+ 
+We are also deeply grateful to Venture Corporation for their generous support and 
+access to valuable resources, which have significantly contributed to the development 
+of our project. A special thank you goes to Mr. Ong Chiau Ho, our Venture supervisor, 
+for granting us the freedom to explore our project direction independently, while 
+consistently offering insightful suggestions and guidance throughout the journey. 
+ 
+We are equally thankful to the Advanced Manufacturing Technology Centre (AMTC) for 
+generously sharing their decades of manufacturing expertise. Their willingness to spend 
+time testing our solution and providing critical advice has been invaluable. 
+ 
+Finally, we extend our sincere thanks to Professor Jovan and Instructor Royston for 
+serving as our examiners and offering constructive feedback that has helped refine our 
+project.  
+ 
+Each of these contributions has played a vital role in shaping the success of our work, 
+and we are truly thankful for the support. 
+2 
+
+============================================================
+PAGE 3
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Executive Summary 
+Context: In the manufacturing industry, particularly within Top-Level Assembly (TLA), 
+ensuring consistent quality remains a challenge. TLA involves a single operator 
+assembling complex, multi-layer products ranging from mechanical to electronic 
+components, where human error caused by fatigue or cognitive overload can result in 
+costly rework, material wastage, and reduced operational efficiency. Traditional 
+inspection techniques often fail to detect defects early, while existing AI-based CV 
+systems lack the flexibility needed to handle the complexity and variability of TLA. 
+ 
+Concept: To address this, we developed VOTÉ (Vision on the Edge), a cost-effective, 
+AI-powered edge computer vision (CV) inspection system that enables real-time, 
+step-by-step assembly guidance. The solution empowers quality control (QC) engineers 
+to train and deploy custom CV models through a no-code desktop application, while 
+operators receive guided inspection feedback via an intuitive edge-based interface. The 
+system integrates Poka-Yoke principles to catch and prevent defects. 
+ 
+Solution: We designed and iterated on a complete end-to-end solution comprising a 
+compact mechanical design for a stable, non-intrusive, and customizable setup, 
+alongside user-friendly interfaces for both model training and live inference. Through 
+extensive user testing with Venture Corporation and the Advanced Manufacturing 
+Technology Centre (AMTC), VOTÉ evolved into a robust and responsive system that 
+helps improve quality control measures in the TLA industry. 
+ 
+Outcome: Key insights included the importance of model interpretability, balanced 
+datasets, and a no-code UI. Ultimately, VOTÉ demonstrated its ability to reduce 
+misassemblies and false positives, while providing actionable feedback to both 
+engineers and operators. By bridging the gap between advanced CV technologies and 
+non-technical users, VOTÉ paves the way for scalable, accessible AI-based CV 
+inspection across small and large-scale manufacturing environments. 
+3 
+
+============================================================
+PAGE 4
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Table of Contents 
+Chapter 1 | Introduction & Problem Statement​
+16 
+1.1 Problem Introduction​
+16 
+1.2 Current Solutions, Limitations, and Root Cause Analysis​
+18 
+1.3 Stakeholder Requirements​
+21 
+1.4 Value Proposition​
+22 
+Chapter 2 | Overview of Design​
+24 
+2.1 Design Overview​
+24 
+2.2 Design Selection​
+25 
+2.2.1 System-Level Selection (Tier I)​
+26 
+2.2.2 Detailed Selection (Tier II)​
+27 
+Chapter 3 | Development of Functional Prototype​
+29 
+3.1 Development of Mechanical Prototype​
+29 
+3.1.1 Mechanical Component Selection​
+29 
+3.1.2 Camera Stand Design​
+30 
+3.1.3 Housing Design​
+32 
+3.1.4 Camera Selection​
+33 
+3.1.5 1st Iteration Mechanical Assembly​
+34 
+3.2 Development of Frontend Prototype​
+35 
+3.2.1 Desktop Application User Interface (Desktop App UI)​
+35 
+3.2.2 Inference Application User Interface (Inference App UI)​
+38 
+3.3 Development of Backend Prototype​
+40 
+3.3.1 CV Models​
+40 
+3.3.2 Data Preparation​
+44 
+3.3.3 Model Training​
+45 
+3.3.4 Model Compilation​
+46 
+3.3.5 Spatial Verification​
+47 
+3.3.6 Database Implementation​
+52 
+Chapter 4 | Testing, Evaluation and Iteration​
+54 
+4.1 Mechanical Subsystem​
+54 
+4.1.1 Stand​
+55 
+4.1.1.1 Evaluation of 1st Stand Iteration​
+55 
+4.1.1.2 2nd Stand Iteration​
+56 
+4.1.1.3 3rd Stand Iteration​
+61 
+4.1.1.4 4th Stand Iteration (Final Design)​
+63 
+4.1.1.4.1 Key Features​
+64 
+4 
+
+============================================================
+PAGE 5
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.1.1.4.2 Base Sizing​
+66 
+4.1.1.4.3 Failure Analysis (Finite Element Analysis)​
+67 
+4.1.1.4.4 Slip Issue​
+68 
+4.1.2 Housing​
+69 
+4.1.3 Final Hardware Assembly​
+71 
+4.2 Frontend Subsystem​
+72 
+4.2.1 Desktop App UI​
+72 
+4.2.1.1 User Journey of Desktop App UI​
+74 
+4.2.1.1.1 Setup​
+75 
+4.2.1.1.2 Train​
+79 
+4.2.1.1.3 Test​
+80 
+4.2.1.1.4 Summary​
+81 
+4.2.1.1.5 Deploy​
+82 
+4.2.2 Inference App UI​
+83 
+4.2.2.1 User Journey of Inference App UI​
+84 
+4.2.3 User Experience Feedback​
+86 
+4.3 Backend Subsystem​
+88 
+4.3.1 Imbalance Datasets​
+88 
+4.3.2 Job Queue​
+91 
+4.3.3 Confidence Threshold​
+92 
+4.3.4 Real-time Spatial Shifts of Bounding Boxes​
+93 
+Chapter 5 | System Integration​
+97 
+5.1 UI-Backend Communication Pipeline​
+97 
+5.2 Desktop-Vote Communication Pipeline​
+98 
+5.3 Real-time Inference on Vote​
+100 
+5.3.1 RAM Usage and Transition to Jetson Nano (8GB)​
+100 
+5.3.2 Iterations: Add Jetson Compatibility​
+101 
+5.4 Final Testing​
+102 
+5.4.1 Mechanical Review​
+103 
+5.4.2 System Testing Technical Review​
+104 
+5.5 Bill of Materials​
+105 
+Chapter 6 | Conclusion​
+106 
+Chapter 7 | Reflection and Lessons Learned​
+108 
+References​
+111 
+Appendices​
+115 
+ 
+5 
+
+============================================================
+PAGE 6
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+List of Figures 
+Chapter 1 | Introduction & Problem Statement​
+19 
+Figure 1: The Factor of 10 rule​
+19 
+Figure 2: 1-10-100 rule​
+19 
+Figure 3: PFMEA Severity Scale in Manufacturing​
+20 
+Figure 4: ISO 2859-1 standard inspection protocol illustration​
+21 
+Figure 5: Quality Alert Distribution in TLA [AMTC]​
+21 
+Figure 6: Root Cause Analysis - Undetected defects in traditional solution​
+22 
+Figure 7: Visualisation of the Poka-Yoke Technique​
+22 
+Figure 8: Flow Diagram of modern TLA Process using CV as a tool for QC 
+Engineers​
+23 
+Chapter 2 | Overview of Design​
+27 
+Figure 9: “Black Box” Diagram for VOTÉ Inspection System​
+27 
+Figure 10: Solution Overview​
+27 
+Figure 11: System Functional Diagram​
+28 
+Chapter 3 | Development of Functional Prototype​
+32 
+Figure 12: Off-The-Shelf Telescoping Arm Stand​
+33 
+Figure 13: Custom Articulated Arm Stand​
+34 
+Figure 14: 1st Iteration Housing​
+35 
+Figure 15: Final Assembly for 1st Iteration Mechanical Assembly​
+37 
+Figure 16: Flow Diagram of project between apps​
+38 
+Figure 17: First Iteration Desktop App Flow Diagram​
+38 
+Figure 18: First Prototype of Desktop App UI​
+39 
+Figure 19: Limitations of Desktop App UI First Iteration​
+39 
+Figure 20: Snippets of Desktop App second iteration’s wireframe​
+40 
+Figure 21: Second Iteration Desktop App Flow Diagram​
+40 
+Figure 22: Key considerations when designing Inference App​
+41 
+Figure 23: Inference App Flow Diagram​
+41 
+Figure 24: First Iteration Inference App Wireframe​
+42 
+Figure 25: High-Level Model Training Workflow​
+43 
+Figure 26: High-Level Model Inference Workflow​
+43 
+Figure 27: Output and analysis of model​
+44 
+Figure 28: Limitation and Improvement to only using Object Detection​
+45 
+Figure 29: Data Preparation Workflow for Classification Models​
+47 
+Figure 30: Type of Augmentations Applied​
+47 
+Figure 31: Random Shifts to Bounding Box Annotations​
+47 
+Figure 32: Workflow of model training​
+48 
+6 
+
+============================================================
+PAGE 7
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Figure 33: Validation Accuracy over Epochs (ViT_base)​
+48 
+Figure 34: HEF Compilation Workflow for Hailo Deployment​
+49 
+Figure 35: ORB Process​
+50 
+Figure 36: View of the processor and operator​
+51 
+Figure 37: Improvements and tradeoffs of ORB + Classification​
+52 
+Figure 38: Improved ORB algorithm​
+54 
+Figure 39: Physical Entity Relationship Diagram for VOTÉ Desktop App​
+56 
+Chapter 4 | Testing, Evaluation and Iteration​
+57 
+Figure 40: Stand Iterations​
+57 
+Figure 41: Housing Iterations​
+57 
+Figure 42: Calculation of Holding Torque​
+59 
+Figure 43: Calculation of Pull Out Torque​
+60 
+Figure 44: Pull Out Torque Matching to NEMA 14 Motor Torque​
+60 
+Figure 45: 2nd Iteration Stand​
+62 
+Figure 46: Insights from 2nd Iteration Stand​
+63 
+Figure 47: 3rd Iterations for Stand​
+64 
+Figure 48: 4th Iteration Stand Features​
+67 
+Figure 49: 4th Iteration Stand Components​
+68 
+Figure 50: Connector Selected for FEA​
+70 
+Figure 51: Stress Result of FEA​
+70 
+Figure 52: Displacement Result of FEA​
+71 
+Figure 53: Base Plate Surface With and Without Rubber Pads​
+71 
+Figure 54: 2nd Iteration Housing vs 1st Iteration Housing​
+72 
+Figure 55: 2nd Iteration VOTE Device​
+73 
+Figure 56: VOTÉ Assembly​
+74 
+Figure 57: Third Iteration Desktop App Flow Diagram​
+75 
+Figure 58: Flow Chart of VOTÉ Desktop App (file navigation)​
+76 
+Figure 59: Login Page​
+77 
+Figure 60: Project Page​
+77 
+Figure 61: Setup Page​
+78 
+Figure 62: Height Page​
+78 
+Figure 63: Dataset Management Page​
+79 
+Figure 64: Dataset Naming Page​
+79 
+Figure 65: Image Upload Page​
+80 
+Figure 66: Label Page​
+80 
+Figure 67: Annotation Page​
+81 
+Figure 68: Augmentation Page​
+81 
+7 
+
+============================================================
+PAGE 8
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Figure 69: Dataset Summary​
+82 
+Figure 70: Training Page​
+79 
+Figure 71: Test Page​
+83 
+Figure 72: Test Detail Page​
+83 
+Figure 77: Summary Page​
+84 
+Figure 78: Deploy Page​
+85 
+Figure 79: Deploy Summary Page​
+85 
+Figure 80: Inference App UI Software Flow Diagram (file navigation)​
+86 
+Figure 81: Project Selection Page​
+87 
+Figure 82: Project Preparation Page​
+87 
+Figure 83: Project Assembly / Inference Page​
+88 
+Figure 84: Override Page​
+88 
+Figure 85: Inspection Summary Page​
+89 
+Figure 86: Key strengths of UI Design​
+90 
+Figure 87: Improvements that can be made for UI Design​
+90 
+Figure 88: Random Split vs Stratified Split at a Train-Valid Ratio of 80%​
+92 
+Figure 89: Minority Augmentation to Achieve Class Balance​
+92 
+Figure 90: Accuracy Comparison after Modifying Data Preparation Method​
+93 
+Figure 91: Job Queue for Training and Compilation Tasks​
+94 
+Figure 92: Test Page showing Show Queue button​
+94 
+Figure 93: Queue Page in Test Page​
+95 
+Figure 94: False Positive when Area of Interest is Obstructed​
+95 
+Figure 95: Correctly Identify Invalid State when Area of Interest is Obstructed​
+96 
+Figure 96: Improved visual feedback for operator​
+97 
+Figure 97: Improved ORB Process​
+98 
+Figure 98: Improvements from Improved process​
+99 
+Chapter 5 | System Integration​
+100 
+Figure 99: UI-Backend Communication Flow​
+100 
+Figure 100: Vote Server Workflow​
+101 
+Figure 101: Camera Thread for MJPEG Stream​
+101 
+Figure 102: Handling of Socket Commands​
+102 
+Figure 103: Toggle Button in Deploy Page​
+104 
+Figure 104 Toggle Button in Summary Page​
+104 
+Figure 105: AMTC User Testing​
+105 
+Figure 106: AMTC User Testing​
+105 
+Chapter 6 | Conclusion​
+109 
+Figure 107: Current state of solution​
+109 
+8 
+
+============================================================
+PAGE 9
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Figure 108: Hardware Architecture​
+110 
+Chapter 7 | Reflection and Lessons Learned​
+111 
+Figure 109: Limitation and future work​
+113 
+ 
+ 
+ 
+9 
+
+============================================================
+PAGE 10
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+List of Tables 
+Chapter 1 | Introduction & Problem Statement​
+19 
+Table 1: Stakeholder Requirements​
+24 
+Table 2: Feature comparison table between existing solutions​
+25 
+Table 3: Feature and Value Proposition​
+26 
+Chapter 2 | Overview of Design​
+27 
+Table 4: System-Level Design Selection​
+29 
+Table 5: Tier II Hardware Selection​
+30 
+Table 6: Tier II Software Selection​
+31 
+Chapter 3 | Development of Functional Prototype​
+32 
+Table 7: Component Selection​
+32 
+Table 8: Off-The-Shelf Telescoping Arm Stand Components​
+33 
+Table 9: Custom Articulated Arm Stand Components​
+34 
+Table 10: 1st Iteration Housing Components​
+35 
+Table 11: Camera Selection​
+36 
+Table 12: Model Benchmarking conducted with Quadro RTX 3000 GPU​
+46 
+Table 13: Hyperparameters used in Table 12​
+46 
+Table 14: Comparison of resolution of camera​
+53 
+Table 15: ORB Computation Time​
+53 
+Table 16: Comparison on Local File Storage and Local Database​
+55 
+Chapter 4 | Testing, Evaluation and Iteration​
+57 
+Table 17: Evaluation for First Stand Iteration​
+58 
+Table 18: Stepper Motor Selection​
+60 
+Table 19: 2nd Iteration Stand Components​
+61 
+Table 20: 3rd Iteration Stand Components​
+64 
+Table 22: Calculations to Size Base Plate​
+68 
+Table 23: 2nd Iteration Housing Components​
+71 
+Table 24: Insights Garnered in Testing with Venture​
+90 
+Chapter 5 | System Integration​
+99 
+Table 25: Available ram on edge devices​
+102 
+Table 26: RAM used for models to be stored in cache on runtime​
+102 
+Table 27: Reviews of VOTE Assembly​
+105 
+Table 28: System Testing Technical Review​
+106 
+Table 29: Bill of Materials​
+107 
+Chapter 6 | Conclusion​
+108 
+Table 30: Overall contribution of VOTÉ​
+110 
+ 
+10 
+
+============================================================
+PAGE 11
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Glossary of Terms 
+Terms 
+Definition 
+Adaptable 
+Able to accurately detect a wide range of common TLA errors 
+AI Accelerator 
+Specialized hardware designed to accelerate artificial intelligence 
+computations 
+AI Model 
+Algorithms that learn from data to perform tasks such as 
+classification. 
+Augmentation 
+Technique to artificially expand datasets by applying 
+transformations to existing data 
+Backend 
+Software process that works behind the scenes, handling tasks 
+like storing data and processing requests. 
+Batch Size 
+The number of training samples processed before the model's 
+internal parameters (weights) are updated 
+Bounding Box 
+Rectangular border drawn around detected objects in computer 
+vision 
+Classification 
+AI model that assigns a single label or category to an entire image 
+Computer Vision 
+Field of AI that enables machines to interpret and understand 
+visual information 
+Confidence 
+Threshold 
+Minimum confidence level required for model predictions to be 
+considered valid 
+Confusion Matrix 
+Table showing performance of classification model including false 
+positives/negatives 
+Cost of quality 
+Total cost involved in ensuring and maintaining product quality 
+Data Preparation 
+Process of organizing and preprocessing datasets for machine 
+learning training 
+Docker Container A lightweight, portable, and isolated environment that packages an 
+application and its dependencies, ensuring it runs consistently 
+across different systems. 
+Early Stopping 
+Training technique that prevents overfitting by stopping when 
+validation performance plateaus 
+11 
+
+============================================================
+PAGE 12
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Edge Computing 
+Processing data near the source rather than in centralized cloud 
+servers 
+Epochs 
+One epoch = one complete pass through the entire training 
+dataset 
+False Positive 
+Incorrectly classifying an acceptable item as defective 
+Feature Matching Feature matching is used to find corresponding points between 
+two images (e.g., a live camera frame and a reference image) to 
+determine if they show the same object or scene. 
+Fine-tuning 
+Process of adapting pre-trained models to specific tasks by 
+adjusting parameters 
+Frontend 
+User-facing interface components of the system 
+Holding Torque 
+The maximum torque the motor can resist when it is powered but 
+not rotating 
+Inference 
+Process of using trained CV models to make predictions on new 
+data 
+Learning Rate 
+Controls how much the model's weights are adjusted during each 
+update step. 
+Localisation 
+The process of determining the precise position and orientation 
+(pose) of an object within an image, based on matched keypoints. 
+Mechanical 
+Assembly 
+Physical integration of hardware components into complete 
+system 
+Misassembly 
+Missing or wrongly assembled parts, mainly caused by operator 
+error 
+Model 
+Compilation 
+Process of optimizing trained models for deployment on specific 
+hardware 
+Model Training 
+Process of teaching machine learning algorithms using labeled 
+datasets 
+No-code Interface User interface that allows model training without programming 
+knowledge 
+Object Detection 
+Process of identifying and locating objects within images 
+12 
+
+============================================================
+PAGE 13
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Optical Character 
+Recognition 
+Technology for detecting and extracting text from images 
+Oriented FAST 
+and Rotated 
+BRIEF 
+Feature detection algorithm for image processing 
+Override 
+Manual intervention option when inference errors prevent normal 
+operation 
+Poka-Yoke 
+“Mistake-proofing”, a lean manufacturing technique that ensures 
+that the right conditions exist before a step in the process is 
+executed. 
+Pre-built AI 
+AI systems with fixed, pre-trained models that cannot be 
+customized 
+Pull Out Torque 
+The maximum torque the motor can handle at a given speed 
+before it loses synchronism 
+Region of Interest 
+(ROI) 
+Specific area within image designated for analysis 
+Spatial 
+Verification 
+Process of confirming object positions and orientations in 3D 
+space 
+Top-Level 
+Assembly (TLA) 
+Manufacturing process where single operator assembles entire 
+complex product 
+Train-Validation 
+Split 
+A machine learning technique where the dataset is divided into 
+two subsets, one for training the model and the other for validating 
+its performance. 
+Transfer Learning ML technique using pre-trained models adapted for related tasks 
+User Interface 
+(UI) 
+Visual elements through which users interact with system 
+UVC (USB Video 
+Class) 
+Standard protocol for USB video devices 
+Validation 
+Accuracy 
+Measure of model performance on validation dataset during 
+training 
+ 
+13 
+
+============================================================
+PAGE 14
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+14 
+
+============================================================
+PAGE 15
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+List of Acronyms 
+Abbreviation 
+Expanded Form 
+AI 
+Artificial Intelligence 
+AMTC 
+Advanced Manufacturing Technology Centre, Venture Corporation 
+Limited 
+API 
+Application Programming Interface 
+AR 
+Augmented Reality 
+CAN 
+Controller Area Network 
+COCO 
+Common Object in Context 
+CoQ 
+Cost of quality 
+CV 
+Computer Vision 
+DFC 
+Data Flow Compiler 
+ESD 
+Electrostatic Discharge 
+FEA 
+Finite Element Analysis 
+FoV 
+Field of View 
+FPS 
+Frame Per Second 
+GPU 
+Graphic Processing Unit 
+GTK 
+GIMP Toolkit 
+GUI 
+Graphical User Interface 
+HEF 
+Hailo Executable Format 
+HTTP 
+Hyper Text Transfer Protocol 
+IR 
+Infrared 
+MIPI 
+Mobile Industry Processor Interface 
+MJPEG 
+Motion JPEG 
+OCR 
+Optical Character Recognition 
+ONNX 
+Open Neural Network Exchange 
+ORB 
+Oriented FAST and Rotated BRIEF 
+OS 
+Operating System 
+PFMEA 
+Process Failure Modes and Effects Analysis 
+15 
+
+============================================================
+PAGE 16
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Abbreviation 
+Expanded Form 
+PoE 
+Power over Ethernet 
+QC 
+Quality Control 
+RAM 
+Random Access Memory 
+ROI 
+Region of Interest 
+SBC 
+Single Board Computer 
+SSH 
+Secure Shell 
+TLA 
+Top-Level Assembly 
+UI 
+User Interface 
+UNC 
+Unified National Coarse 
+USB 
+Universal Serial Bus 
+UVC 
+USB Video Class 
+Venture 
+Venture Corporation 
+ViT 
+Vision Transformer 
+VOTÉ 
+Vision on the Edge 
+VR 
+Virtual Reality 
+ 
+ 
+ 
+ 
+ 
+16 
+
+============================================================
+PAGE 17
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Chapter 1 | Introduction & Problem Statement 
+1.1 Problem Introduction 
+Cost of quality (CoQ) [Appendix A] and defect problems in complex assemblies have 
+long posed significant challenges for manufacturing companies. Not only can the 
+manufacturing sites suffer from poor yield and damaged reputation due to rejected 
+assemblies, high rework costs can severely impact operational profitability [1]. 
+ 
+Figure 1: The Factor of 10 rule [2] 
+ 
+Figure 2: 1-10-100 rule [3] 
+According to the traditional Rule of Ten [Figure 1, Figure 2], CoQ due to defects 
+increases exponentially at each stage of the manufacturing process. This suggests that 
+defects have to be detected in early stages by implementing preventative measures, to 
+reduce the compounded CoQ [4]. 
+ 
+17 
+
+============================================================
+PAGE 18
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+This is particularly important for Top-Level Assembly (TLA) [Appendix B], the stage 
+where the final product is fully assembled before dispatch. Given its position at the end 
+of the production chain, defects discovered after this stage are significantly more costly. 
+This is evident in the PFMEA (Process Failure Modes and Effects Analysis) Severity 
+Scale in Figure 3 which is a framework used to assess the impact of failure modes 
+[Appendix C]. 
+ 
+Figure 3: PFMEA Severity Scale in Manufacturing [5] 
+On this scale, TLA processes are subjected to a severity ranking of 2 to 3, which 
+indicates a low-to-moderate impact. Tackling issues at this stage is essential to prevent 
+escalation into higher-severity failures and financial losses.  
+ 
+Thus, this project aims to implement preventative measures to reduce defects in TLA 
+processes to reduce the compounded CoQ. 
+18 
+
+============================================================
+PAGE 19
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+1.2 Current Solutions, Limitations, and Root Cause Analysis 
+Existing solutions can be categorized into traditional and modern approaches, with the 
+former focusing on corrective measures and the latter shifting toward preventive 
+strategies. 
+ 
+Figure 4: ISO 2859-1 standard inspection protocol illustration [6] 
+Traditional solutions often adhere to the ISO 2859-1 standard inspection protocol 
+[Appendix D], which involves random sampling of product batches to assess their 
+overall quality [6]. However, this method is limited in its effectiveness for catching all 
+assembly errors, as it does not guarantee the detection of defects within every unit.  
+ 
+Figure 5: Quality Alert Distribution in TLA [AMTC]  
+ 
+19 
+
+============================================================
+PAGE 20
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Figure 5 presents the quality alert distribution observed by the Advanced Manufacturing 
+Technology Centre (AMTC) at Venture when using traditional inspection methods. This 
+is supported by our interview with their engineer, who noted that such methods often 
+miss defects, with at least one TLA reject occurring every three days [Appendix E]. 
+These findings prompted us to investigate the root causes of traditional inspection 
+limitations. 
+ 
+Figure 6: Root Cause Analysis - Undetected defects in traditional solution 
+The root cause analysis diagram above illustrates why the standard inspection is not 
+suitable for TLA processes inspection. The complex and multi-layer TLA product nature 
+demands a method that can monitor every assembly step to detect defects, and raise 
+errors whenever defects are detected to inform operators before proceeding into the 
+next steps [Appendix F - Figure F9, F10]. 
+ 
+Figure 7: Visualisation of the Poka-Yoke Technique 
+To be able to detect defects at every step, the modern inspection process integrates 
+Computer Vision (CV) technology with a methodology of Quality Control (QC), known as 
+Poka-Yoke [7-9], to incorporate fail-safes directly into the TLA process [Appendix G]. CV 
+solutions are preferred due to their superior consistency, accuracy, and efficiency in 
+inspection tasks compared to traditional quality control methods [Appendix H]. 
+20 
+
+============================================================
+PAGE 21
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 8: Flow Diagram of modern TLA Process using CV as a tool for QC Engineers 
+Figure 8 illustrates how a CV tool integrated with the Poka-Yoke methodology can be 
+used for inspection in the TLA process. 
+21 
+
+============================================================
+PAGE 22
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+1.3 Stakeholder Requirements 
+The stakeholder analysis table below is formulated based on the feedback we received 
+from the stakeholders through interviews, field visits [Appendix E], and a survey form 
+crafted to obtain feedback from the TLA operators [Appendix F]. 
+Table 1: Stakeholder Requirements 
+ 
+ 
+ 
+22 
+
+============================================================
+PAGE 23
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+1.4 Value Proposition 
+Based on the identified stakeholder requirements [Table 1], we conducted a market 
+analysis and identified several existing solutions that might fulfill the mentioned 
+requirements. A feature comparison of these solutions is presented in Table 2. 
+Table 2: Feature comparison table between existing solutions 
+ 
+From the comparison table, we identified a key gap: although many offer AI-based CV 
+and adopt a preventive inspection approach (Poka-Yoke), they lack the flexibility for 
+users to customize or train their own CV models for specific tasks. As a result, users are 
+limited to pre-built models, which significantly restricts the system’s adaptability across 
+different applications [Appendix I]. 
+23 
+
+============================================================
+PAGE 24
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Recognizing this limitation and the strengths of current competitors, we developed a 
+feature guideline aimed at addressing this gap and better meeting stakeholder needs, 
+as shown in the table below. 
+Table 3: Feature and Value Proposition 
+ 
+These comparisons allowed us to identify our market positioning and emphasize a key 
+value proposition for TLA applications: enabling users to adjust, adapt, and customize 
+the inspection process through user-trainable AI-based CV. 
+24 
+
+============================================================
+PAGE 25
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Chapter 2 | Overview of Design 
+2.1 Design Overview 
+The black box diagram below provides a general overview of the main inputs and 
+outputs of our proposed solution, Vision on the Edge (VOTÉ), a smart CV solution 
+designed to perform step-by-step inspections throughout the TLA process to reduce 
+defects. 
+ 
+Figure 9: “Black Box” Diagram for VOTÉ Inspection System 
+ 
+Figure 10: Solution Overview 
+ 
+25 
+
+============================================================
+PAGE 26
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Figure 10 illustrates the overview of the solution that our project aims to implement, 
+highlighting the relationships and interactions between the different stakeholders and 
+the system. 
+ 
+Figure 11: System Functional Diagram  
+Figure 11 presents a system functional diagram of our solution, offering a more detailed 
+view compared to the black box diagram in Figure 9. This diagram serves as a 
+reference for guiding our system design. 
+ 
+2.2 Design Selection 
+This section presents morph charts to illustrate our design selection process, structured 
+into two tiers: Tier I for system-level decisions, and Tier II for more detailed hardware 
+and software selections. 
+26 
+
+============================================================
+PAGE 27
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+2.2.1 System-Level Selection (Tier I)  
+Table 4: System-Level Design Selection 
+ 
+ 
+ 
+27 
+
+============================================================
+PAGE 28
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+2.2.2 Detailed Selection (Tier II) 
+The morph chart in this section is developed based on the system-level selections from 
+Section 2.2.1, providing more specific options corresponding to the previously chosen 
+items.  
+Table 5: Tier II Hardware Selection 
+ 
+ 
+28 
+
+============================================================
+PAGE 29
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Table 6: Tier II Software Selection 
+ 
+After identifying the most suitable designs for our solution, we proceeded to develop a 
+functional prototype based on these selected designs, as detailed in Chapter 3. 
+29 
+
+============================================================
+PAGE 30
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Chapter 3 | Development of Functional Prototype 
+3.1 Development of Mechanical Prototype 
+The main mechanical requirement is to provide an adjustable yet stable stand to 
+support the camera for live-streaming and image capturing. Additionally, a camera 
+housing is needed to securely hold the single board computer (SBC) and camera in 
+place. This segment introduces the development process of the first iteration of our 
+mechanical design.  
+3.1.1 Mechanical Component Selection 
+Table 7: Component Selection 
+ 
+We defined the key requirements for the stand and housing, and developed the 
+component selection chart above to guide our mechanical system design. 
+ 
+30 
+
+============================================================
+PAGE 31
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.1.2 Camera Stand Design 
+Table 8: Off-The-Shelf Telescoping Arm Stand Components 
+ 
+An off-the-shelf telescoping arm camera stand was procured to study the mechanism 
+stability and suitability for our application. [Table 8, Figure 12].  
+ 
+Figure 12: Off-The-Shelf Telescoping Arm Stand  
+ 
+31 
+
+============================================================
+PAGE 32
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Based on measurements taken at the TLA workstation, a minimum height of 70 cm is 
+required to avoid obstructing the operator’s movement. However, the current stand only 
+reaches a maximum height of 50 cm. To address this limitation, a custom stand was 
+prototyped using 3D printing, which featured an articulated arm and was specifically 
+designed to meet the required height specifications [Table 9, Figure 13]. 
+Table 9: Custom Articulated Arm Stand Components 
+ 
+ 
+Figure 13: Custom Articulated Arm Stand  
+ 
+32 
+
+============================================================
+PAGE 33
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+This iteration of the arm stand featured a table clamp mechanism for secure attachment 
+to the TLA workstation. Unlike standard off-the-shelf stands that use telescoping joints, 
+this design incorporated universal joints to enable yaw movement. The joints were also 
+extended in length, allowing the stand to reach a maximum height of 70 cm. 
+3.1.3 Housing Design 
+Table 10: 1st Iteration Housing Components  
+ 
+The housing for the SBC and camera was designed to be compact and lightweight, 
+featuring ventilation slots to enhance heat dissipation, as shown in Figure 14.  
+ 
+Figure 14: 1st Iteration Housing 
+ 
+33 
+
+============================================================
+PAGE 34
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.1.4 Camera Selection 
+Table 11: Camera Selection 
+ 
+Several industrial cameras were evaluated and compared, as summarized in the table 
+above. The TechNexion VCI-AR1335-SL was selected due to its high resolution of 
+13MP [Appendix J] and its UVC-compliant USB interface which provides flexibility for 
+integration. 
+34 
+
+============================================================
+PAGE 35
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.1.5 1st Iteration Mechanical Assembly 
+ 
+Figure 15: Final Assembly for 1st Iteration Mechanical Assembly 
+Figure 15 shows the final assembly of the first version of our mechanical system, 
+featuring two universal joints and a table clamp mechanism. While this design meets the 
+70 cm height requirement and provides a sufficiently wide field of view (FOV), it 
+presents several limitations that will be discussed in Chapter 4.1. 
+ 
+ 
+ 
+ 
+35 
+
+============================================================
+PAGE 36
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.2 Development of Frontend Prototype 
+The VOTÉ software system comprises two applications: the Desktop App, primarily 
+used by QC engineers for project setup, and the Inference App, used by operators for 
+TLA inspections. 
+ 
+Figure 16: Flow Diagram of project between apps 
+3.2.1 Desktop Application User Interface (Desktop App UI) 
+ 
+Figure 17: First Iteration Desktop App Flow Diagram 
+Our initial development effort focused on the Desktop App, which serves as the primary 
+interface for setting up and training CV models. To study Python GTK4’s feasibility in 
+our application, a simple single-layer layout is built without wireframing. 
+ 
+ 
+ 
+ 
+ 
+36 
+
+============================================================
+PAGE 37
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+ 
+Figure 18: First Prototype of Desktop App UI 
+However, this design revealed several critical usability issues from stakeholder 
+feedback. 
+ 
+Figure 19: Limitations of Desktop App UI First Iteration 
+This review inspired our second iteration, which utilised some aspects of Venture’s 
+cloud CV model training system as reference. 
+ 
+37 
+
+============================================================
+PAGE 38
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 20: Snippets of Desktop App second iteration’s wireframe [Appendix K] 
+ 
+Figure 21: Second Iteration Desktop App Flow Diagram 
+While this iteration established a more logical workflow, it introduced process 
+fragmentation. Since datasets are unique to each assembly step, configuring them 
+within the steps streamlines the setup workflow.
+ 
+38 
+
+============================================================
+PAGE 39
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.2.2 Inference Application User Interface (Inference App UI) 
+Before developing the Inference App, key considerations [Figure 22] were outlined to 
+guide the workflow design [Figure 23] and wireframing [Figure 24]. Further development  
+will follow after finalizing the Desktop Application to ensure a smooth, standardized 
+workflow [Chapter 4.2.2]. 
+ 
+Figure 22: Key considerations when designing Inference App 
+ 
+Figure 23: Inference App Flow Diagram 
+ 
+39 
+
+============================================================
+PAGE 40
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 24: First Iteration Inference App Wireframe 
+ 
+ 
+ 
+ 
+40 
+
+============================================================
+PAGE 41
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.3 Development of Backend Prototype 
+3.3.1 CV Models 
+As shown in Table 6, we aim to deploy object detection [Appendix L], classification 
+[Appendix M], and OCR [Appendix N] models on the edge device. Given that TLA 
+typically does not involve uncommon fonts or languages, pre-built OCR models (e.g., 
+EasyOCR) are used without retraining [14]. Therefore, only detection and classification 
+models will require iterative development and testing. 
+ 
+Figure 25 and 26 illustrate the high-level workflows for model training and inference 
+respectively. 
+ 
+Figure 25: High-Level Model Training Workflow 
+ 
+ 
+Figure 26: High-Level Model Inference Workflow 
+ 
+41 
+
+============================================================
+PAGE 42
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Initial testing used object detection models which are trained to identify screws [Figure 
+27], but results showed limited accuracy and an absence of spatial verification. 
+ 
+Figure 27: Output and analysis of model 
+Given this, classification models may be more effective if they achieve higher accuracy, 
+especially when the localization benefit of object detection is irrelevant without spatial 
+verification [Figure 28]. 
+ 
+42 
+
+============================================================
+PAGE 43
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 28: Limitation and Improvement to only using Object Detection 
+To validate this approach, we benchmarked classification and detection models [Table 
+12]. Classification consistently outperformed detection in accuracy, justifying a shift to a 
+classification-centric pipeline. Accordingly, subsequent CV model discussions will focus 
+on classification. 
+43 
+
+============================================================
+PAGE 44
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Table 12: Model Benchmarking conducted with Quadro RTX 3000 GPU 
+ 
+ 
+Table 13: Hyperparameters used in Table 12 
+ 
+ 
+44 
+
+============================================================
+PAGE 45
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.3.2 Data Preparation 
+Annotated datasets curated by QC engineers are used to crop and organize images for 
+training and validation [Figure 29]. 
+ 
+Figure 29: Data Preparation Workflow for Classification Models 
+Augmentations are also applied to the training dataset to artificially expand the size and 
+diversity of the training images, mitigating the time-consuming task of annotating large 
+volumes of images [Figure 30]. 
+ 
+Figure 30: Type of Augmentations Applied 
+A key augmentation strategy is spatial shifting, specially designed to account for 
+annotation imprecision by QC engineers [Figure 31].  
+ 
+Figure 31: Random Shifts to Bounding Box Annotations 
+ 
+45 
+
+============================================================
+PAGE 46
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.3.3 Model Training 
+With the datasets prepared, QC engineers will select a pre-built model for transfer 
+learning [Figure 32]. This process adapts the model to its specific application, 
+significantly reducing training time and the need for extensive datasets [Appendix O]. 
+ 
+Figure 32: Workflow of model training 
+While testing, we observed that validation accuracy dropped after a certain number of 
+epochs [Figure 33]. To mitigate this, early stopping with best weight restoration was 
+implemented to enhance generalization and reduce unnecessary computation 
+[Appendix P]. 
+ 
+Figure 33: Validation Accuracy over Epochs (ViT_base) 
+ 
+46 
+
+============================================================
+PAGE 47
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.3.4 Model Compilation​ 
+Following training, the model is compiled and deployed to an edge device for real-time 
+inference. Platform selection was based on two key criteria: 
+1.​ Industry Compliance: Suitability for real-world deployment. 
+2.​ AI Computational Performance: Support for fast inference 
+ 
+Venture recommended the use of Vest IMX8M Plus with Hailo-8. This selection was 
+followed through as it satisfied both requirements [15-16]. 
+ 
+To deploy models onto the Hailo-8 accelerator, the Hailo Dataflow Compiler (DFC) is 
+required [Appendix Q]. However, due to its complex environment dependencies, DFC is 
+run within a Docker container to avoid conflicts with the VOTE Desktop App 
+environment [Figure 34]. 
+ 
+Figure 34: HEF Compilation Workflow for Hailo Deployment 
+ 
+47 
+
+============================================================
+PAGE 48
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.3.5 Spatial Verification 
+To address the spatial verification issue identified in Figure 28, ORB (Oriented FAST 
+and Rotated BRIEF) feature matching was integrated [17, Figure 35]. 
+ 
+Figure 35: ORB Process 
+ 
+48 
+
+============================================================
+PAGE 49
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Figure 36 shows an example of the inference output seen by the operator. 
+ 
+Figure 36: View of the processor and operator 
+ 
+49 
+
+============================================================
+PAGE 50
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+An analysis identified the need to balance frame processing speed and image resolution 
+for both ORB and classification accuracy [Figure 37]. 
+ 
+Figure 37: Improvements and tradeoffs of ORB + Classification 
+ 
+ 
+50 
+
+============================================================
+PAGE 51
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+To measure frame processing speed, tests were performed on camera capture time 
+[Table 14] and ORB processing time [Table 15] at various resolutions. 
+ 
+Table 14: Comparison of resolution of camera​
+ 
+Table 15: ORB Computation Time 
+ 
+51 
+
+============================================================
+PAGE 52
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+With a target of 5 FPS, only 1920×1080 resolution was viable. To maintain classification 
+accuracy, an optimized ORB pipeline was developed [Figure 38]. This approach 
+captures images at 3840 x 2160 for high-resolution input to the classification model. It 
+then downscales it to 1280 x 720 for faster processing (achieving 5 FPS), trading off 
+some ORB accuracy, which remains sufficient for small rotational angles. 
+ 
+Figure 38: Improved ORB algorithm 
+52 
+
+============================================================
+PAGE 53
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+3.3.6 Database Implementation 
+As identified in the morph chart, local storage is preferred to ensure data privacy. To 
+determine the best implementation, local file storage and a local database were 
+compared, as shown in Table 16. 
+Table 16: Comparison on Local File Storage and Local Database 
+ 
+Based on the comparison, a local database was chosen for its ability to manage the 
+multi-layered and complex data of the desktop application, with SQLite selected for the 
+implementation. 
+ 
+53 
+
+============================================================
+PAGE 54
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ ​
+​
+ 
+ 
+Figure 39: Physical Entity Relationship Diagram for VOTÉ Desktop App  
+ 
+54 
+
+============================================================
+PAGE 55
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+Chapter 4 | Testing, Evaluation and Iteration  
+4.1 Mechanical Subsystem  
+This section outlines how the final design was developed through multiple iterations, 
+starting from the first version in Chapter 3.1. The design was reviewed through case 
+studies and feedback from various stakeholders, including Venture and the NUS Central 
+Workshop, to ensure it meets the deployment requirements for TLA sites. 
+ 
+Figure 40: Stand Iterations 
+ 
+Figure 41: Housing Iterations 
+ 
+55 
+
+============================================================
+PAGE 56
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+4.1.1 Stand 
+4.1.1.1 Evaluation of 1st Stand Iteration 
+Table 17: Evaluation for First Stand Iteration 
+ 
+ 
+ 
+ 
+56 
+
+============================================================
+PAGE 57
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+ 
+ As shown in Table 17, the telescoping arm stand failed to meet the height requirement, 
+while the articulated arm stand lacked stability. Initial testing highlighted design flaws 
+that shaped subsequent improvements. 
+4.1.1.2 2nd Stand Iteration 
+The second iteration aims to enhance overall stability and addresses the issue of the 
+camera losing focus when new layers are added to the TLA product. 
+A linear actuator was proposed to adjust the camera height dynamically and maintain 
+proper focus throughout the assembly process. A 2 mm pitch lead screw was selected 
+to enable precise vertical movement. Based on torque calculations and performance 
+comparisons below, a lightweight NEMA 14 stepper motor was chosen for its adequate 
+holding and pull-out torque. 
+ 
+Figure 42: Calculation of Holding Torque 
+ 
+57 
+
+============================================================
+PAGE 58
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+ 
+Figure 43: Calculation of Pull Out Torque 
+ 
+ 
+Figure 44: Pull Out Torque Matching to NEMA 14 Motor Torque 
+Table 18: Stepper Motor Selection 
+ 
+ 
+58 
+
+============================================================
+PAGE 59
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+Table 19: 2nd Iteration Stand Components​
+ 
+To overcome the limitations of the table clamp design, this iteration adopts a wheelbase 
+mounting approach. 
+59 
+
+============================================================
+PAGE 60
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+ 
+ 
+Figure 45: 2nd Iteration Stand 
+The stand can be rolled into position and placed over the workstation, positioning the 
+inspection camera directly above the operator. This configuration enhances both 
+mobility and stability, as the stand is no longer fixed to the table. The camera height is 
+adjustable via a linear actuator driven by a NEMA 14 stepper motor. 
+ 
+After reviewing the design with Venture stakeholders, several limitations that make it 
+unsuitable for deployment at TLA sites were identified. Figure 46 summarizes the key 
+insights from this review. 
+60 
+
+============================================================
+PAGE 61
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+ 
+Figure 46: Insights from 2nd Iteration Stand 
+ 
+61 
+
+============================================================
+PAGE 62
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+4.1.1.3 3rd Stand Iteration 
+Table 20: 3rd Iteration Stand Components 
+ 
+In the third iteration, we switched to a flat base design instead of the previous 
+wheelbase to improve both stability and overall functionality of the stand. 
+ 
+ 
+ 
+62 
+
+============================================================
+PAGE 63
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+ 
+Figure 47: 3rd Iterations for Stand 
+ 
+Within the third design iteration, several minor refinements were made to progressively 
+improve and finalize the design. The changes in each sub-iteration are shown in Table 
+20 and Figure 47. 
+ 
+63 
+
+============================================================
+PAGE 64
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+Table 21: Evaluations for 3rd Iterations​
+ 
+ 
+64 
+
+============================================================
+PAGE 65
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+4.1.1.4 4th Stand Iteration (Final Design) 
+4.1.1.4.1 Key Features 
+ 
+Figure 48: 4th Iteration Stand Features 
+* Aluminium 6061 was chosen for all fabricated components due to its high 
+strength-to-weight ratio and lightweight properties. 
+65 
+
+============================================================
+PAGE 66
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ ​
+​
+​
+​
+         ​ 
+ 
+ 
+Figure 49: 4th Iteration Stand Components 
+66 
+
+============================================================
+PAGE 67
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+​       
+4.1.1.4.2 Base Sizing 
+The base is sized at 35 × 30 cm to ensure stability and provide a 24 × 30 cm working 
+area for operators. An extra 3 cm is added at the rear to counter tipping. Based on an 
+estimated 1.7 kg stand and 1 kg VOTE device, the base platform thickness is set to 
+1 cm for stability. 
+Table 22: Calculations to Size Base Plate  
+ 
+67 
+
+============================================================
+PAGE 68
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+​       
+4.1.1.4.3 Failure Analysis (Finite Element Analysis) 
+The connector in Figure 50 is identified as the most load-bearing component, supporting 
+the weight of the motor, lead screw, VOTE device, and other parts. 
+ 
+Figure 50: Connector Selected for FEA 
+Simulation results showed that the maximum stress is well below the yield strength of 
+aluminum 6061 by an order of magnitude, indicating structural safety. The minimal 
+deflection of 0.002 mm further confirms its rigidity. 
+ 
+Figure 51: Stress Result of FEA 
+ 
+68 
+
+============================================================
+PAGE 69
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+​       
+ 
+Figure 52: Displacement Result of FEA 
+ 
+4.1.1.4.4 Slip Issue 
+The smooth surface of the aluminum base plate causes the stand to slip during 
+operation. To address this issue and enhance stability, rubber pads were added to the 
+corners of the plate. 
+ 
+Figure 53: Base Plate Surface With and Without Rubber Pads 
+    
+69 
+
+============================================================
+PAGE 70
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+​       
+4.1.2 Housing  
+The 3D-printed housing was sufficiently rigid and lightweight to support both the camera 
+and SBC. However, it struggled to dissipate heat under maximum SBC load, posing a 
+risk of thermal shutdown. To address this, fan cooling was added to enhance heat 
+dissipation. 
+Table 23: 2nd Iteration Housing Components 
+ 
+ 
+Figure 54: 2nd Iteration Housing vs 1st Iteration Housing 
+ 
+ 
+ 
+ 
+70 
+
+============================================================
+PAGE 71
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+   ​
+​
+​
+​
+​
+ 
+​       
+ 
+ 
+Figure 55: 2nd Iteration VOTE Device 
+71 
+
+============================================================
+PAGE 72
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+​       
+ 
+4.1.3 Final Hardware Assembly 
+ 
+Figure 56: VOTÉ Assembly  
+The final iteration of the stand and housing are fabricated and assembled, as shown in 
+Figure 56. The hardware components were then integrated with the software for 
+system-level testing in Chapter 5.4.1. 
+72 
+
+============================================================
+PAGE 73
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+​       
+4.2 Frontend Subsystem 
+4.2.1 Desktop App UI 
+The third iteration of the Desktop App UI enhances the user experience by introducing 
+additional layers that organize functionalities more intuitively. 
+ 
+Figure 57: Third Iteration Desktop App Flow Diagram 
+73 
+
+============================================================
+PAGE 74
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+   ​
+​
+​
+​
+​
+ 
+ 
+ 
+Figure 58: Flow Chart of VOTÉ Desktop App (file navigation) 
+ 
+74 
+
+============================================================
+PAGE 75
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.2.1.1 User Journey of Desktop App UI 
+This section illustrates the end-to-end workflow of VOTE Desktop App UI. 
+ 
+Figure 59: Login Page 
+Users first login to their account in the “Login” page.  
+ 
+Figure 60: Project Page 
+Then, they are directed to the Project page to select a project for configuration. In it, 
+there are 4 main tabs: “Setup”, “Train”, “Test”, and “Summary”. 
+75 
+
+============================================================
+PAGE 76
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.2.1.1.1 Setup 
+ 
+Figure 61: Setup Page 
+In “Setup”, users can configure the assembly steps’ instructions, camera height and 
+datasets.  
+ 
+Figure 62: Height Page 
+The camera height is adjusted to optimize focus of the target. 
+ 
+76 
+
+============================================================
+PAGE 77
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 63: Dataset Management Page 
+The datasets are created and managed with another 4 tabs for users to configure: 
+“Name”, “Upload Images”, “Augmentation”, and “Dataset Summary”. 
+ 
+ 
+Figure 64: Dataset Naming Page 
+In “Name”, users can rename the auto-generated dataset name. 
+77 
+
+============================================================
+PAGE 78
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 65: Image Upload Page 
+In “Upload Images”, users will upload, annotate and label their images. 
+ 
+ 
+Figure 66: Label Page 
+Labels are edited in a pop-up window. 
+78 
+
+============================================================
+PAGE 79
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 67: Annotation Page 
+Annotations are edited in a pop-up window, where users must also select an image as 
+the final result of that assembly step. 
+ 
+Figure 68: Augmentation Page 
+In “Augmentation”, users can toggle a variety of augmentation options.  
+79 
+
+============================================================
+PAGE 80
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 69: Dataset Summary 
+In “Dataset Summary”, a summary of the configurations implemented is displayed.  
+ 
+4.2.1.1.2 Train 
+ 
+Figure 70: Training Page 
+In “Train”, users can start training their customisable AI model with setup completed. 
+80 
+
+============================================================
+PAGE 81
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.2.1.1.3 Test 
+ 
+Figure 71: Test Page 
+In “Test”, users can check all the models trained. 
+ 
+Figure 72: Test Detail Page 
+Users can also view detailed training results, such as hyperparameters and accuracy 
+over epochs. 
+81 
+
+============================================================
+PAGE 82
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.2.1.1.4 Summary 
+ 
+Figure 77: Summary Page 
+In “Summary”, users select the desired trained model for each step and export it to the 
+Deploy page.
+ 
+82 
+
+============================================================
+PAGE 83
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.2.1.1.5 Deploy 
+ 
+Figure 78: Deploy Page 
+In “Deploy”, users can see all the projects that are exported. 
+ 
+Figure 79: Deploy Summary Page 
+After selecting a project, users can review the models for each step and deploy them to 
+the VOTE Device.
+ 
+83 
+
+============================================================
+PAGE 84
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.2.2 Inference App UI 
+After finalising the Desktop App, we began working on the Inference App UI as stated in 
+Chapter 3.2.2. Below shows the software workflow of the Inference App. 
+ 
+Figure 80: Inference App UI Software Flow Diagram (file navigation) 
+ 
+ 
+84 
+
+============================================================
+PAGE 85
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.2.2.1 User Journey of Inference App UI 
+ 
+Figure 81: Project Selection Page 
+The Inference App begins on the “Project Selection” page, where users choose a 
+project for assembly. 
+ 
+Figure 82: Project Preparation Page 
+They are then directed to the “Project Preparation” page, where they can either start the 
+project on the “Inference” page or check performance statistics on the “Inspection 
+Summary” page. 
+85 
+
+============================================================
+PAGE 86
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 83: Project Assembly / Inference Page 
+In “Inference”, operators assemble the product based on on-screen instructions and 
+inference output, typically without needing to provide input. 
+ 
+Figure 84: Override Page 
+However, if an inference error occurs, which prevents progress to the next step, the 
+override option can be used. 
+86 
+
+============================================================
+PAGE 87
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 85: Inspection Summary Page 
+In “Inspection Summary”, it displays the operator’s performance statistics, including 
+assembly time and reasons for overrides. 
+ 
+4.2.3 User Experience Feedback 
+To evaluate the usability of our UIs, user feedback was gathered from Venture’s 
+Software Engineer, Fang Chii Aik [Appendix R]. This highlighted key strengths [Figure 
+86] and areas for improvement [Figure 87] for our future work [Chapter 7]. 
+87 
+
+============================================================
+PAGE 88
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 86: Key strengths of UI Design 
+ 
+Figure 87: Improvements that can be made for UI Design 
+ 
+88 
+
+============================================================
+PAGE 89
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.3 Backend Subsystem 
+To evaluate the feasibility of our training and inference pipeline in a real-world 
+manufacturing setting, testing was conducted with Venture’s Business Program 
+Manager, Ong Chaiu Ho. This revealed several gaps to be addressed in the current 
+iteration [Table 24]. 
+Table 24: Insights Garnered in Testing with Venture 
+ 
+ 
+89 
+
+============================================================
+PAGE 90
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.3.1 Imbalance Datasets 
+To address gap 1 [Table 24], two key changes were implemented: 
+1.​ Stratified split over random split: To preserve class distribution across training 
+and validation sets, preventing further underrepresentation of minority classes 
+[Figure 88] and improving model accuracy [18]. 
+ 
+ 
+Figure 88: Random Split vs Stratified Split at a Train-Valid Ratio of 80% 
+2.​ Aggressive 
+augmentation 
+of 
+minority 
+class: 
+To 
+artificially 
+expand 
+underrepresented classes to achieve class balance [Figure 89]. 
+ 
+Figure 89: Minority Augmentation to Achieve Class Balance 
+The effectiveness of these changes was confirmed by a reduction in false positives, 
+indicating improved model performance on imbalanced datasets [Figure 90]. 
+90 
+
+============================================================
+PAGE 91
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+ 
+Figure 90: Accuracy Comparison after Modifying Data Preparation Method
+ 
+91 
+
+============================================================
+PAGE 92
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.3.2 Job Queue 
+To address Gap 2 [Table 24], a backend job queue system was implemented to 
+schedule training and compilation tasks [Figure 91]. 
+ 
+Figure 91: Job Queue for Training and Compilation Tasks 
+This system was integrated with the UI, enabling users to monitor and manage the 
+queue directly [Figure 92, Figure 93]. 
+ 
+Figure 92: Test Page showing Show Queue button 
+ 
+92 
+
+============================================================
+PAGE 93
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 93: Queue Page in Test Page 
+ 
+93 
+
+============================================================
+PAGE 94
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.3.3 Confidence Threshold 
+To address gap 3 [Table 24], a confidence threshold of 80% is introduced to reduce 
+false positives caused by obstruction of camera view [Figure 94]. 
+ 
+Figure 94: False Positive when Area of Interest is Obstructed 
+Predictions with confidence below the threshold are marked as “invalid” to reject 
+uncertain inputs, thereby improving system reliability [Figure 95]. 
+ 
+Figure 95: Correctly Identify Invalid State when Area of Interest is Obstructed 
+ 
+94 
+
+============================================================
+PAGE 95
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+4.3.4 Real-time Spatial Shifts of Bounding Boxes 
+To address Gap 4 [Table 24], the user-defined bounding box was adjusted based on the 
+target’s orientation, providing real-time visual feedback as shown in Figure 96. 
+ 
+Figure 96: Improved visual feedback for operator 
+This is achieved with an improved algorithm that highlights incorrect ROIs for users 
+[Figure 97]. Additionally, it reduces computational load, enabling higher frame rates and 
+enhancing both responsiveness and user experience [Figure 98]. 
+ 
+95 
+
+============================================================
+PAGE 96
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 97: Improved ORB Process 
+ 
+96 
+
+============================================================
+PAGE 97
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure 98: Improvements from Improved process 
+ 
+ 
+​
+ 
+97 
+
+============================================================
+PAGE 98
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Chapter 5 | System Integration 
+5.1 UI-Backend Communication Pipeline 
+The system uses a separation of concerns approach with two main processes for UI 
+responsiveness: 
+●​ UI: Handles the VOTE Desktop App’s GTK4 user interface. 
+●​ Backend: Manages the computationally intensive training and compilation tasks. 
+ 
+Figure 99 illustrates the communication between these processes for real-time updates 
+in the UI. 
+ 
+Figure 99: UI-Backend Communication Flow 
+ 
+98 
+
+============================================================
+PAGE 99
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+5.2 Desktop-VOTE Communication Pipeline 
+The Desktop and VOTE Device communicate via two communication channels [Figure 
+100]:  
+ 
+Figure 100: VOTE Server Workflow 
+1.​ Flask: Streams live video at 1920x1080p for minimal latency [Figure 101]. 
+ 
+Figure 101: Camera Thread for MJPEG Stream 
+ 
+99 
+
+============================================================
+PAGE 100
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+2.​ Socket: Processes commands [Figure 102] 
+○​ Notably, “capture_image” adjusts the resolution of the camera to 
+3840x2160p for a higher resolution training dataset, stopping the stream 
+temporarily. 
+ 
+Figure 102: Handling of Socket Commands  
+ 
+ 
+100 
+
+============================================================
+PAGE 101
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+5.3 Real-time Inference on VOTE 
+5.3.1 RAM Usage and Transition to Jetson Nano (8GB) 
+After integrating all systems together, we found out that there is insufficient ram to run 
+our program on the i.MX8mp board, as shown in Table 25 and 26. 
+ 
+Table 25: Available ram on edge devices 
+ 
+ 
+Table 26: RAM used for models to be stored in cache on runtime 
+ 
+ 
+101 
+
+============================================================
+PAGE 102
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+With only 0.9GB ram on the Vest board, there is insufficient ram available to load both 
+the UI and multiple models. Jetson Orin Nano, which is of comparable size and price, is 
+then proposed by Venture as a prototyping platform. 
+ 
+5.3.2 Iterations: Add Jetson Compatibility 
+To be compatible with both Jetson Orin Nano and IMX8MP, a toggle button is added to 
+the UI to enable flexibility of targeted devices [Figure 103 and Figure 104]. 
+ 
+Figure 103: Toggle Button in Deploy Page 
+ 
+Figure 104 Toggle Button in Summary Page 
+ 
+ 
+102 
+
+============================================================
+PAGE 103
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+5.4 Final Testing 
+After integrating the mechanical assembly, frontend, and backend into a complete 
+VOTÉ system, we invited stakeholders from AMTC to conduct user testing. The 
+feedback from this session is summarized in Table 28 [Appendix S]. 
+ 
+Figure 105: AMTC User Testing 
+ 
+Figure 106: AMTC User Testing 
+ 
+103 
+
+============================================================
+PAGE 104
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+5.4.1 Mechanical Review 
+The mechanical assembly was reviewed by AMTC using a review checklist [Appendix 
+T]. The table below summarizes the key feedback gathered from user testing. 
+Table 27: Reviews of VOTE Assembly 
+ 
+To address the limitations identified, future improvements will focus on extending the 
+auto focus-length adjustment range or redesigning the stand to support longer range. 
+The stand structure will be refined to enhance overall stability, and a gyroscope will be 
+integrated to mitigate the impact of external vibrations on the camera. Additionally, 
+stronger fans and heatsinks will be added to the VOTE device to improve thermal 
+management during prolonged operation. 
+104 
+
+============================================================
+PAGE 105
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+5.4.2 System Testing Technical Review 
+Table 28: System Testing Technical Review 
+ 
+ 
+ 
+ 
+105 
+
+============================================================
+PAGE 106
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+5.5 Bill of Materials  
+Table 29: Bill of Materials 
+ 
+106 
+
+============================================================
+PAGE 107
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Chapter 6 | Conclusion 
+Figure 107 illustrates the current state of our solution, showcasing the complete 
+workflow from data preparation to edge deployment. 
+ 
+Figure 107: Current state of solution 
+ 
+ 
+107 
+
+============================================================
+PAGE 108
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Figure 108 illustrates the hardware architecture of our solution. 
+ 
+Figure 108: Hardware Architecture 
+ 
+ 
+108 
+
+============================================================
+PAGE 109
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Table 30 shows the overall contribution of our work towards the problem defined in 
+Chapter 1. 
+Table 30: Overall contribution of VOTÉ 
+ 
+109 
+
+============================================================
+PAGE 110
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Chapter 7 | Reflection and Lessons Learned 
+ 
+During the second semester, our team encountered several key technical and 
+process-related challenges that led to valuable lessons. Initially, we struggled with 
+optimizing the ViT model for real-time inference due to RAM limitations on the i.MX 
+platform. This forced us to explore model compression, TensorRT acceleration, and 
+ultimately transition to the Jetson Orin Nano, which taught us the importance of 
+hardware-software compatibility early in the design phase. We also learned that system 
+performance isn’t just about accuracy, visual feedback latency and user clarity are just 
+as critical.  
+ 
+Implementing targeted overlay feedback based on classification results greatly 
+improved user experience and became a turning point in our design. From a team 
+perspective, we initially faced difficulty coordinating tasks, especially when hardware 
+testing created bottlenecks for software development. We resolved this by breaking 
+down responsibilities more granularly and aligning progress through weekly sync-ups 
+and task boards.  
+ 
+Process-wise, our early planning lacked sufficient buffer time for integration and testing. 
+In hindsight, we would have reserved more time for debugging across components, as 
+last-minute issues such as camera vibration and USB instability affected system 
+reliability. We also learned the value of iterative testing, by constantly verifying our 
+pipeline at each step, we avoided major integration failures later on.  
+ 
+Overall, the experience sharpened our ability to balance technical ambition with 
+practical constraints and reinforced the importance of adaptability, clear communication, 
+and user-centered design. 
+ 
+ 
+110 
+
+============================================================
+PAGE 111
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ ​
+ 
+​ 
+Figure 109 shows our key limitation and future work. 
+ 
+Figure 109: Limitation and future work 
+111 
+
+============================================================
+PAGE 112
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+References 
+Section 1.1: 
+[1] NWA Software, “Reducing Defects in a Complex Assembly,” NWA Software, 2016. 
+[Online]. Available: 
+https://www.nwasoft.com/resources/information-center/case-study/reducing-defects-co
+mplex-assembly 
+[2] "Dare to be different — save £1000s by applying the Factor of 10 Rule," 
+Quality2Day. [Online]. Available: 
+https://www.quality2day.com/dare-to-be-different-save-1000s-by-applying-the-factor-of-1
+0-rule 
+[3] “The 1-10-100 Rule for Early Defect Detection to Enhance Product’s Quality,” Gack 
+Consulting, 2020. [Online]. Available: The 1-10-100 rule for early defect detection to 
+enhance product's quality 
+[4] “Process Quality Management Beats the Rule of Ten,” Quality Digest, Apr. 2007. 
+[Online]. Available: Process quality management beats the rule of ten 
+[5] “Counting the Cost of Quality,” Tolcap, 2014. [Online]. Available: 
+https://www.tolcap.com/blogs/research-papers-and-published-articles/counting-the-cost-
+of-quality 
+Section 1.2: 
+[6] ISO 2859-1:1999 — Sampling procedures for inspection by attributes — Part 1: 
+Sampling schemes indexed by acceptance quality limit (AQL) for lot-by-lot inspection, 
+2nd ed., International Organization for Standardization, Geneva, Switzerland, 1999. 
+[Online]. Available: https://www.iso.org/obp/ui/#iso:std:iso:2859:-1:ed-2:v1:en 
+[7] “Poka-Yoke: Principles, Methods, and Examples,” Status.net, 2023. [Online]. 
+Available: https://status.net/articles/poka-yoke-principles-methods-examples/ 
+112 
+
+============================================================
+PAGE 113
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+[8] “Poka-Yoke,” iSixSigma. [Online]. Available: 
+https://www.isixsigma.com/dictionary/poka-yoke/ 
+[9] “What Is Poka-Yoke? Poka-Yoke In A Nutshell,” FourWeekMBA, 2023. [Online]. 
+Available: https://fourweekmba.com/poka-yoke/ 
+[10] “Reducing Costs and Increasing Efficiency: The ROI of AI in Quality Inspection,” 
+LinkedIn, [Online]. Available: 
+https://www.linkedin.com/pulse/reducing-costs-increasing-efficiency-roi-ai-quality-inspec
+tion-up7de [Accessed: 21-Jul-2025]. 
+[11] Memex Inc., “How Vision Systems Can Reduce Costs in Manufacturing,” Memex 
+OEE, [Online]. Available: https://memexoee.com/news/vision-systems-cost-reduction/  
+[Accessed: 21-Jul-2025]. 
+[12] BrightPoint AI, “Transforming Manufacturing: AI Inspection for Efficiency and Cost 
+Savings,” BrightPoint AI, [Online]. Available: 
+https://www.brightpoint.ai/post/transforming-manufacturing-ai-inspection-for-efficiency-a
+nd-cost-savings  [Accessed: 21-Jul-2025]. 
+[13] Wikipedia, “Smart Manufacturing,” Wikipedia, [Online]. Available: 
+https://en.wikipedia.org/wiki/Smart_manufacturing  [Accessed: 21-Jul-2025]. 
+Section 3.3:​
+[14] “EasyOCR Overview, Examples, Pros and Cons in 2025,” Builder.io, 2025. 
+https://best-of-web.builder.io/library/JaidedAI/EasyOCR (accessed Jul. 27, 2025). 
+ 
+[15] “From Sensors to Insights: Edge AI Pipelines with iMX8M Plus SOMs,” 
+Financialcontent.com, 
+Jul. 
+24, 
+2025. 
+https://www.financialcontent.com/article/marketersmedia-2025-7-24-from-sensors-to-insi
+ghts-edge-ai-pipelines-with-imx8m-plus-soms (accessed Jul. 27, 2025). 
+ 
+113 
+
+============================================================
+PAGE 114
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+[16] “AI Processor Hailo-8 For Edge Devices | Up to 26 Tops Hardware,” Hailo, Mar. 05, 
+2025. https://hailo.ai/products/ai-accelerators/hailo-8-ai-accelerator/#hailo8-overview. 
+ 
+[17] Rublee, Ethan & Rabaud, Vincent & Konolige, Kurt & Bradski, Gary. (2011). ORB: 
+an efficient alternative to SIFT or SURF. Proceedings of the IEEE International 
+Conference on Computer Vision. 2564-2571. 10.1109/ICCV.2011.6126544. 
+mAP of detr. https://github.com/roboflow/rf-detr. 
+ 
+Section 4.3: 
+[18] J. Sadaiyandi, P. Arumugam, A. K. Sangaiah, and C. Zhang, “Stratified 
+Sampling-Based Deep Learning Approach to Increase Prediction Accuracy of 
+Unbalanced Dataset,” Electronics, vol. 12, no. 21, p. 4423, Jan. 2023, doi: 
+https://doi.org/10.3390/electronics12214423. 
+ 
+Appendix 
+[19] GeeksforGeeks, “What is Object Detection in Computer Vision?,” GeeksforGeeks, 
+May 10, 2024. 
+https://www.geeksforgeeks.org/computer-vision/what-is-object-detection-in-computer-vis
+ion/ (accessed Jul. 27, 2025). 
+ 
+[20] GeeksforGeeks, “Getting started with Classification,” GeeksforGeeks, Jun. 15, 
+2016. 
+https://www.geeksforgeeks.org/machine-learning/getting-started-with-classification/. 
+ 
+[21] GeeksforGeeks, “What is Optical Character Recognition (OCR)?,” GeeksforGeeks, 
+Oct. 
+17, 
+2023. 
+https://www.geeksforgeeks.org/computer-science-fundamentals/what-is-optical-characte
+r-recognition-ocr/ (accessed Jul. 27, 2025). 
+ 
+114 
+
+============================================================
+PAGE 115
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+[22] E. Team, “What is Transfer Learning? Types and Applications,” Great Learning 
+Blog: Free Resources what Matters to shape your Career!, Apr. 22, 2025. 
+https://www.mygreatlearning.com/blog/what-is-transfer-learning/. 
+ 
+[23] GeeksforGeeks, “Regularization by Early Stopping,” GeeksforGeeks, Oct. 21, 2020. 
+https://www.geeksforgeeks.org/machine-learning/regularization-by-early-stopping/. 
+ 
+[24] “Software Suite for AI Applications & Deep Learning | Hailo Edge AI,” Hailo, Dec. 
+15, 2024. https://hailo.ai/products/hailo-software/hailo-ai-software-suite/#sw-dc. 
+ 
+115 
+
+============================================================
+PAGE 116
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendices 
+Appendix A: Understanding the Cost of Quality (CoQ) [5] 
+The Cost of Quality (CoQ) refers to the total cost involved in ensuring and maintaining 
+product quality, including the cost of both preventing and correcting defects. Table A1 
+shows the four key categories of CoQ that are related to the manufacturing industry. 
+ 
+Table A1: Four Key Categories of CoQ 
+Prevention Costs 
+Investments in systems (like VOTÉ) to prevent defects during TLA 
+Appraisal Costs 
+Resources used to inspect or monitor product quality during assembly 
+Internal Failure 
+Cost of rework or scrap when defects are found before leaving the 
+workstation 
+External Failure 
+Cost of defects found after delivery — including warranty claims and 
+returns 
+ 
+Generally, efficient CoQ management involves investing in prevention and appraisal 
+efforts while minimizing the costs associated with failures. 
+ 
+Appendix B: Understanding Top-Level Assembly (TLA) 
+Top-Level Assembly (TLA) is a process where a single operator is responsible for 
+assembling an entire complex product at their individual workstatiSon. The assembly 
+process involves various components such as mechanical parts, electronic modules, 
+part orientation, and precise alignment. Common examples of TLA products include 
+consumer electronics, industrial equipment, automotive electronics, and medical 
+devices. Figure B1 shows an example of a TLA workstation, where each operator has 
+their own assembly product to be assembled.  
+116 
+
+============================================================
+PAGE 117
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure B1: Example of Top-Level Assembly (TLA) Processes 
+It is also important to highlight the differences between TLA and line manufacturing to 
+avoid confusion. Table B1 summarises the key distinctions between the two processes. 
+Table B1: Comparison between TLA and Line Manufacturing 
+Aspects 
+Top-Level Assembly 
+Line Manufacturing 
+Number of 
+Operators Involved 
+One operator per workstation 
+Multiple operators, each assigned to 
+specific tasks along the production 
+line 
+Workflow 
+One operator assembles the 
+entire product from start to finish 
+at a single station 
+Product moves through a sequence 
+of stations, each performing a 
+specific sub-task 
+Product 
+Complexity and 
+Handling  
+Suited for complex products with 
+varied components 
+Best for standardized, repetitive 
+tasks 
+Quality Control 
+Random Sampling method on a 
+batch of products 
+Typically performed at dedicated 
+quality checkpoints or at the end of 
+the line 
+Production Volume 
+Low to medium 
+High, mass-production 
+Accountability 
+Individual operator is responsible 
+for the entire assembly 
+Shared responsibility across multiple 
+operators 
+ 
+117 
+
+============================================================
+PAGE 118
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Appendix C: Integrated FMEA ‘Severity’ scale with traditional Rule of Ten [5] 
+ 
+Figure C1: FMEA ‘Severity’ Scale with Rule of Ten 
+The above modified FMEA ‘Severity’ Scale is used to reflect the traditional ‘rule of ten’ 
+for failure costs. This ‘rule of ten’ states that when a defect is discovered, then its cost 
+increases tenfold for each stage of the process it has gone through. If a customer 
+returns a product immediately, the cost to replace and process it is about equal to the 
+product’s sales value. If the product fails later in the field, warranty costs can be 10 
+times higher due to shipping and investigation. If a defect is caught just before dispatch, 
+rework typically costs around 10% of the product’s value. 
+ 
+VOTE aims to reduce failure cost by keeping the failures at scale of 2 to 3, by deploying 
+a Poka Yoke based AI inspection solution.  
+ 
+ 
+118 
+
+============================================================
+PAGE 119
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix D: ISO 2859-1 Standard Inspection Protocol [6] 
+ISO 2859-1:1999 is an international standard that outlines procedures for lot-by-lot 
+inspection by attributes. It defines sampling schemes indexed by Acceptance Quality 
+Limit (AQL) to determine whether a production lot should be accepted or rejected based 
+on a sample. Table D1 outlines the three key concepts derived from the ISO 2859-1 
+standard. 
+Table D1: Key Concepts from ISO 2859-1 
+Term 
+Definition 
+AQL (Acceptance 
+Quality Limit) 
+The maximum % of defectives considered acceptable during 
+random sampling. 
+Lot-by-lot inspection 
+Each production batch is inspected independently using 
+defined sampling plans. 
+Sampling Plan 
+Specifies the number of items to inspect and the 
+acceptance/rejection criteria. 
+ 
+In many TLA sites, random sampling inspection is used to check the quality of batches. 
+This approach is based on statistical sampling rather than 100% inspection. However, 
+this method has limitations in detecting all defects, especially when complex assemblies 
+are involved. 
+119 
+
+============================================================
+PAGE 120
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix E: [27 February 2025] Transcript during our field visit to Advanced 
+Manufacturing Technology Centre (AMTC)’s TLA manufacturing site 
+ 
+Figure E1: Group photo outside AMTC TLA manufacturing site 
+(After bringing us around the manufacturing site) 
+1)​ AMTC [Kar Lin]: As you can see, a single Top-Level Assembly (TLA) product 
+consists of multiple layers and can be quite complex when many components are 
+involved. Currently, we’re using a random sampling inspection method for TLA, 
+which is a corrective measure to decide whether to accept or reject a batch of 
+assembled products. Although this method has been widely used in 
+manufacturing for a long time, it does not guarantee 100% defect detection. In 
+fact, we average at least one reject every three days on our TLA site. So, a more 
+effective inspection solution, one that provides peace of mind and assurance is 
+needed. 
+2)​ Us: Don’t mind us asking, but we noticed that most of the operators here seem to 
+be from an ageing workforce. Is there a reason for that? Could it also be part of 
+the reason why there are so many defects in the TLA site? 
+3)​ AMTC [Kar Lin]: Great observation. The reason is that younger workers tend to 
+avoid operator roles due to the tiring and repetitive nature of the job. That’s also 
+120 
+
+============================================================
+PAGE 121
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+why we’re trying to adopt new technologies like Artificial Intelligence (AI) and 
+Computer Vision (CV) to reduce the cognitive burden on operators. That said, it’s 
+not entirely accurate to say defects happen because the operators are older. It’s 
+simply human nature to make mistakes, especially in complex, repetitive tasks. 
+People tend to switch into autopilot mode, and when that happens, focus drops 
+and mistakes become more likely. 
+4)​ Us: Ahh, that makes sense. So you're suggesting that a computer vision 
+inspection system with an AI-based algorithm could help improve the accuracy of 
+the assembly process? How exactly does that make it more accurate? Isn’t it just 
+replacing the quality control engineer’s role in inspecting the product? 
+5)​ AMTC [Kar Lin]: Yes, we believe an AI-based CV system can significantly 
+improve the quality of assembled products, especially if it’s paired with the right 
+quality control methodology. Like I mentioned earlier, current inspection methods 
+in TLA are mostly corrective, but I think preventive strategies would work better. 
+That’s because errors need to be caught as early as possible since a TLA 
+product is built in layers, it's not ideal for an operator to realise they made a 
+mistake only after assembling several more layers on top. 
+6)​ Us: That makes a lot of sense! By the way, is there anything else you’d like to 
+see from our upcoming solution? 
+7)​ AMTC [Kar Lin]: Yes, a very important element you should include in your 
+solution is some form of assurance metrics for users. For example, you could 
+quantify the performance of your system or find a way to measure the quality of 
+the inspected TLA products. This gives customers greater confidence that what 
+they’re receiving is of high quality and free from defects. The word assurance is 
+key in the TLA context because customers would not want to receive a faulty 
+product. 
+8)​ AMTC [Kar Lin]: Lastly, make sure to design an intuitive user interface since the 
+operators and most QC engineers are not trained in the AI domain. 
+9)​ Us: That’s clear, we understand now. Thank you very much for the advice. 
+10)​AMTC [Kar Lin]: Have a good day. 
+121 
+
+============================================================
+PAGE 122
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix F: Survey Form Result 
+ 
+Figure F1: TLA operators working hours 
+ 
+Figure F2: Type of TLA products 
+122 
+
+============================================================
+PAGE 123
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure F3: Type of TLA components 
+123 
+
+============================================================
+PAGE 124
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure F4: Visual Assembly Guidance 
+124 
+
+============================================================
+PAGE 125
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure F5: Fatigue when performing TLA work 
+ 
+Figure F6: Confidence in assembly accuracy 
+125 
+
+============================================================
+PAGE 126
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure F7: Detection of misassemblies or defects 
+ 
+Figure F8: Rework or scrap products due to defects 
+126 
+
+============================================================
+PAGE 127
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure F9: Complexity of TLA products 
+127 
+
+============================================================
+PAGE 128
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure F10: Insights on integration of AI/CV 
+ 
+ 
+128 
+
+============================================================
+PAGE 129
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix G: Poka-Yoke Explained [7-9] 
+Poka-yoke is a Japanese quality control technique developed by former Toyota 
+engineer Shigeo Shingo. Translated as “mistake-proofing”, poka-yoke aims to prevent 
+defects in the manufacturing process that are the result of human error. Poka-yoke is a 
+lean manufacturing technique that ensures that the right conditions exist before a step 
+in the process is executed. This makes it a preventative form of quality control since 
+errors are detected and then rectified before they occur. Figure G1 illustrates the six 
+core principles of Poka-Yoke, arranged in order of decreasing effectiveness. 
+ 
+ 
+Figure G1: The six principles of Poka-Yoke 
+ 
+Poka-Yoke is especially useful in managing the Cost of Quality, which emphasizes that 
+the longer a defect goes undetected, the more expensive it becomes to fix. While 
+human error is unavoidable regardless of how simple or complex a task may be, Poka 
+Yoke reduces the opportunities for those errors to happen. This not only improves 
+product quality but also creates a less stressful working environment. 
+129 
+
+============================================================
+PAGE 130
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix H: Why Computer Vision (CV) in the Manufacturing Industry 
+Computer Vision (CV) is rapidly transforming the manufacturing industry by enhancing 
+quality control, improving efficiency, and reducing operational costs. It enables 
+machines to interpret and understand visual data from the physical world, making it 
+highly effective for automating inspection, monitoring, and decision-making tasks. Table 
+H1 presents real-world data highlighting the impact of computer vision in the 
+manufacturing industry, particularly in inspection applications. 
+Table H1: Real-World impact of CV in manufacturing industry 
+Benefit 
+Supportive Data 
+Productivity & 
+Accuracy 
+AI-powered inspection systems can improve quality up to 
+30–40%, with accuracy up to 99.9% (vs. 80–90% for human 
+inspectors) [10] 
+Waste & Defect 
+Reduction 
+Companies report up to 90% fewer defects/recalls, 60% 
+better detection rates, and up to 50% reduction in inspection 
+time [11] 
+Market Growth 
+The visual inspection AI market is projected to reach $2.2B 
+by 2027 (CAGR: 7.3%); global CV market set to grow from 
+$12B (2021) to $205B by 2030 (CAGR ~37%) [12] 
+Smart Manufacturing 
+Impact 
+Smart factory initiatives reduced defect rates by 27.6%, cut 
+prototype time by 7.1%, and lowered costs by 29.2% [13] 
+ 
+In the context of TLA, CV enables real-time step-by-step inspection, helping to 
+implement preventive quality control strategies such as Poka-Yoke. It empowers 
+operators and QC engineers to catch mistakes early, reduce human error, and ensure 
+product reliability. 
+130 
+
+============================================================
+PAGE 131
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix 
+I: 
+Comparison 
+between 
+Rule-Based, 
+Pre-Built 
+AI-based, 
+and 
+Customizable AI-based Computer Vision (CV) 
+There are three types of computer vision approaches applicable to inspection in TLA: 
+●​ Rule-Based Computer Vision 
+●​ Pre-Built AI-Based Computer Vision 
+●​ Customizable AI-Based Computer Vision 
+ 
+The comparison table and Venn diagram below illustrate the key differences between 
+these approaches. 
+ 
+Table I1: Comparison between Rule-Based, Pre-Built and Customizable AI-based CV 
+ 
+131 
+
+============================================================
+PAGE 132
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+Figure I1: Venn Diagram Comparison between Rule-Based, Pre-Built and Customizable AI-based CV 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+132 
+
+============================================================
+PAGE 133
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix J: Calculating the Minimal Camera Pixels Requirements 
+Using the thin lens equation: 
+FoV = 2 * D * tan(θ/2​), where θ = 2 * arctan(S/2f​) 
+Key Parameters: 
+S = Sensor dimension (horizontal or vertical) 
+f = Focal length of the lens 
+D = Working distance 
+ 
+For Technexion VCI-AR1335-CB camera: 
+S = 4.8mm(W) * 3.6mm(H) 
+f = 6.0mm 
+D = 700mm (stakeholder requirement) 
+ 
+By applying the formula above, 
+FoV(W) = 560 mm                     Angle of View (Horizontal) = 43.6° 
+FoV(H) = 420 mm                Angle of View (Vertical) = 33.4  
+ 
+Resolution Requirement (for detecting 0.3 mm defects): 
+Formula for calculating minimum pixels requirements: P = [FoV(W) * FoV(H)] /​ S 
+Key Parameters: 
+FoV = Field of View  
+S = Feature Size 
+P = Sensor Pixel Size 
+ 
+*Assume smallest defect in the top-level assembly = 0.3mm (S = 0.3mm): 
+Resolution(W) = 560mm/0.3mm = 1867 pixels 
+Resolution(H) = 420mm/0.3mm = 1400 pixels 
+Therefore, minimal camera pixels requirements: 1867p x 1400p = 2.6MP 
+Technexion VCI-AR1335-CB camera active pixels: 4208 (H) x 3120(H) = 13.15MP ✓ 
+ 
+133 
+
+============================================================
+PAGE 134
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+Appendix K: Desktop App UI Wireframe 
+ 
+Figure K1. Desktop App UI Wireframe 
+ 
+
+============================================================
+PAGE 135
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix L: Understanding Object Detection [19] 
+Object detection is the process of identifying and locating objects within an image. 
+Unlike image classification, which only assigns a label to the entire image, object 
+detection provides both the category of the object and its location. The output of an 
+object detection model typically consists of bounding boxes around detected objects, 
+along with a class label and a confidence score for each prediction. 
+ 
+Figure L1. Depiction of Object Detection Output 
+The model scans the image and predicts multiple candidate regions that may contain 
+objects. For each region, it assigns a class label and estimates a bounding box that 
+encloses the object. It then calculates a confidence score for each prediction. The final 
+output is a set of bounding boxes, each with a predicted class and confidence, filtered 
+using a threshold and techniques like Non-Maximum Suppression to eliminate 
+duplicates. 
+ 
+135 
+
+============================================================
+PAGE 136
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix M: Understanding Classification [20] 
+Image classification is the process of assigning a single label or category to an entire 
+image based on its content. A classification model analyzes the visual features within an 
+image and determines the most probable class it belongs to from a predefined set of 
+categories. Unlike object detection, classification does not provide information about the 
+location of objects, only their presence. 
+ 
+Figure M1. Image Classification Workflow 
+ 
+The model processes the entire image and assigns a probability to each possible class. 
+These probabilities indicate how likely the image belongs to each category. The class 
+with the highest probability is selected as the final output. For example, if an image is 
+evaluated as 80% likely to be a cat, 15% dog, and 5% rabbit, the model returns “cat” as 
+the classification result.
+ 
+136 
+
+============================================================
+PAGE 137
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix N: Understanding Optical Character Recognition [21] 
+Optical Character Recognition (OCR) is the process of detecting and extracting text 
+from images or scanned documents. OCR systems analyze visual patterns to recognize 
+characters, words, and lines of text, and convert them into machine-readable formats. 
+Unlike classification or object detection, OCR focuses specifically on text data within 
+visual content. 
+ 
+Figure N1: OCR Applications 
+ 
+OCR typically starts by detecting areas of the image that contain text. Once these text 
+regions are identified, the image data is interpreted character by character or word by 
+word. The model assigns a probability to each possible character at each position and 
+selects the most likely sequence based on those probabilities. This output is then 
+returned as plain text. Some OCR systems also use language models to correct spelling 
+or improve accuracy based on context.
+ 
+137 
+
+============================================================
+PAGE 138
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix O: Understanding Transfer Learning [22] 
+Transfer learning is a technique where a model pre-trained on a large, general dataset 
+is adapted for a related but different task. Instead of training a model from scratch, 
+transfer learning reuses the learned features from the pre-trained model, which helps 
+reduce both training time and the amount of data needed. 
+ 
+Figure O1: Transfer Learning Workflow 
+Process of Transfer Learning 
+1.​ Pre-training: The base model is trained on a large-scale dataset (e.g., ImageNet) 
+to learn general features such as edges, textures, and shapes. 
+2.​ Retraining the Classification Head: Since the pre-trained model’s original 
+classification head is tailored to the source dataset classes, it must be replaced 
+or retrained to predict the target task’s classes. This usually involves replacing 
+the final layer(s) of the network with new layers appropriate for the target 
+classification categories. 
+3.​ Fine-tuning (Unfreezing Layers): Initially, most of the model’s layers are “frozen” 
+(weights fixed) to retain the general features learned during pre-training. After 
+training the new classification head, selective layers, often the later convolutional 
+layers, are “unfrozen” to allow fine-tuning. This step adapts these layers to better 
+capture domain-specific features in the target dataset, improving accuracy.
+138 
+
+============================================================
+PAGE 139
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix P: Understanding Early Stopping [23] 
+Early stopping is a technique used during model training to prevent overfitting. It 
+monitors the model’s performance on a validation set and stops training if the validation 
+accuracy does not improve after a certain number of epochs, which is defined by the 
+patience parameter.  
+ 
+Figure P1: Early Stopping Graph 
+ 
+Along with early stopping, best weight restoration can restore the model’s weights to 
+those corresponding to the epoch with the best validation performance, rather than the 
+weights from the final epoch. This ensures the model selected generalizes best to 
+unseen data. 
+ 
+Thus, using early stopping with patience and best weight restoration leads to more 
+efficient training and better-performing models. 
+ 
+ 
+139 
+
+============================================================
+PAGE 140
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix Q: Understanding Hailo Dataflow Compiler [24] 
+The Hailo Dataflow Compiler (DFC) is a proprietary toolchain provided by Hailo for 
+compiling deep learning models onto the Hailo-8 AI accelerator. It converts standard 
+models (typically in ONNX or TensorFlow format) into an optimized binary format that 
+can run efficiently on the Hailo-8 hardware. 
+ 
+ 
+Figure Q1: Hailo Dataflow Compiler Workflow 
+ 
+ 
+140 
+
+============================================================
+PAGE 141
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+Appendix R: Scoring Sheet for UI Design 
+ 
+ 
+
+============================================================
+PAGE 142
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+142 
+
+============================================================
+PAGE 143
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+143 
+
+============================================================
+PAGE 144
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+144 
+
+============================================================
+PAGE 145
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+​
+ 
+ 
+145 
+
+============================================================
+PAGE 146
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+146 
+
+============================================================
+PAGE 147
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+ 
+
+============================================================
+PAGE 148
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+Appendix S: [16 July 2025] Transcript of User Testing with Advanced 
+Manufacturing Technology Centre (AMTC), Venture 
+ 
+Figure S1: AMTC User Testing  
+(Following the demo of our prototype) 
+1)​ Us: What do you think about this Poka-Yoke machine as a solution for Top-Level 
+Assembly (TLA) inspection? 
+2)​ AMTC [Kar Lin]: After watching your demo, I believe this concept is a strong 
+starting point to replace the traditional manual inspection methods currently used 
+in TLA. That said, the solution still needs more refinement before it's ready for 
+actual deployment in manufacturing sites. But I understand this is just a prototype 
+or proof-of-concept, and considering that you’ve only worked on it for about three 
+months, it’s truly an excellent piece of work. 
+3)​ AMTC [Boon Teong]: I really like the Poka-Yoke concept here. In TLA, every 
+assembly step matters, and the quality of earlier steps affects subsequent ones. I 
+especially appreciate how your setup page follows a step-by-step structure. 
+However, I think you should consider including a confusion matrix in your testing 
+148 
+
+============================================================
+PAGE 149
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+detail page. That way, users can better understand the performance (false 
+negatives and false positives) of their trained models. 
+4)​ Us: We understand where you're coming from with the confusion matrix. 
+However, in our current solution, it's not possible to calculate the false positive or 
+false negative rates solely from the trained model. That information would require 
+real-world testing, i.e. the software itself can’t detect false positives or false 
+negatives unless overridden manually. 
+5)​ AMTC [Boon Teong]: That makes sense for now. My suggestion would be: once 
+you start doing more field testing, be sure to include a summary page for each 
+model. It should show the confusion matrix, confidence level, and an overall 
+model robustness score (this would help non-AI users better understand the 
+model’s performance at a glance). 
+6)​ Us: Thanks for the suggestion. Also, we have a question regarding the 
+Electrostatic Discharge (ESD) mat we're currently using. Does it meet the 
+standard for ESD immunity? 
+7)​ AMTC [Kar Lin]: The material is correct, but you need to ensure the mat is 
+grounded for it to properly discharge static. 
+8)​ Us: Got it. We have another question regarding our user interface. Currently, we 
+have both the OCR and QR code functionalities listed under the same category 
+in the user interface. Do you have any input regarding this? 
+9)​ AMTC [Mei Hua]: These should be separated as they serve different functions. 
+Also, for QR codes, you might need to consider using a dedicated QR code 
+scanner, especially if the codes are too small for the camera to detect accurately. 
+TLA products often use a very small barcode or QR code when compared to the 
+size of the overall product. Given that your camera is mounted at a relatively high 
+position, there may be cases where its resolution isn't sufficient to reliably scan 
+these small codes. 
+10)​ Us: Oh, that’s something we hadn’t really considered, thanks for pointing it out! 
+11)​AMTC [Mei Hua]: One extra thing from me, the camera lens should be covered 
+in the housing to avoid damage.  
+149 
+
+============================================================
+PAGE 150
+============================================================
+​
+​
+​
+​
+​
+​
+​
+​
+​ 
+12)​ Us: Alright noted. Thanks for all the inputs ! 
+13)​ AMTC: No worries, great work from the team ! 
+ 
+Appendix T: Hardware Review Checklist 
+ 
+Figure T1: Hardware Review Checklist 
+150 

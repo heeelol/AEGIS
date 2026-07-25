@@ -1,0 +1,57 @@
+Us: Using my phone. Yeah, so maybe at the start we can reintroduce what the project is about. The first question we have is actually, what is the kitting problem and how much is it costing TE Connectivity? Maybe a short introduction on what the problem is from your perspective and the impact of these problems on the company as a whole.
+
+Daryl: So for us, this issue has been brought up a few times by different plants, specifically kitting and packaging-related plants that face multiple issues of customer complaints due to mispackaged items. The errors range from missing items from the package to wrong items being packed. This leads to prominent complaints from customers that multiple different plants have actually faced, and even across multiple business units. That's where we feel that there needs to be a solution to ensure we solve this issue.
+
+Us: Thank you. Moving on to another general question, now that you've seen the system at this more or less final stage of the prototyping process, what is your overall impression of the system in general?
+
+Daryl: I'd say I'm actually quite impressed with the whole system. In terms of the entire hardware build as well as the software and all the thinking that went behind it—considering the different logical flows, process flows, UI, ergonomics, and all the various error cases—it's really well thought out.
+
+Us: Thank you. Compared to the current measures implemented, like the manual checklist or the weighing at the end of the kitting process you mentioned, how does our system actually solve the gaps that those measures don't address? Maybe you could use one of the examples you mentioned.
+
+Daryl: So currently, the kitting station employs a final weighing station once all the items are packed. But in those cases, once you measure and find a discrepancy, multiple items have typically already been packed inside. Identifying exactly which wrong piece or item was packed is very time-consuming. That's where we see a lot of inefficiency, and it costs us labor time. With this kind of poka-yoke design, the operators will know exactly when an error happens so they can catch it on the spot. This will drastically reduce that troubleshooting time. I think this is the most impactful part of the solution.
+
+Us: Thank you. Leading on from that, is there any feature of our system that you didn't expect, or something we didn't heavily mention during presentations, that you thought was very useful?
+
+Daryl: I would say it's the thought process behind the tiered bin system and ensuring it works well with both the camera system and the weight system. For example, you mentioned how even just showing 20% or 30% of the box still ensures all the bounding boxes work. I think these small features are actually quite important to the eventual full design. Also, the lighting tests, the error case handling, the warnings, and the UI indicators that provide guidance for operators—especially new operators. That's a feature I hadn't thought about before, but it will be very useful to a group of people within the plant.
+
+Us: Okay, then maybe we'll move on to the limitations or any room for improvement. Is there any aspect of our project that you are skeptical about or have points of criticism on?
+
+Daryl: I wouldn't say this is something I observed right now, but rather a potential issue. As highlighted earlier, very light items—under one gram, for example. In terms of how stable this current system is for those, I can't say for certain. My concern is that because it is so light, any debris or stray components falling into the bin might trigger false errors. This is one potential thing to take care of.
+
+Us: We discussed this with supervisors, and they talked about bottlenecks in the line. A professor suggested that in the industry, people often branch these tedious processes out of the main line and conduct them separately before rejoining the line. If you want to branch it out for lighter objects, our system has the potential to handle it by using high-resolution, light load receptors (like 500g or 1kg cells instead of 5kg and 10kg). Then you do a separate kitting station for that, and the kits join back in.
+
+Daryl: Yes, I think that makes sense. Also, regarding the high-mix, low-volume aspect, I don't know the entire range of bin configurations each plant has. Some bills of materials (BOMs) might just have a few items, while others have large quantities. If we set up these stations, we need to decide how many weight sensors of what configurations and sizes are needed. There will definitely still be some items that don't get a dedicated weighing scale, which is where the vision system comes in. As a proof of concept, I think this works very well already.
+
+Us: We did a lot of limit testing. All the data for the load cells is primarily for the 1kg, 5kg, and 10kg platforms. Moving on to future-proofing: TE's product mix and skill mix are constantly changing. How well do you think our system can keep up with those changes? Is further rework required?
+
+Daryl: For actual deployment, I know this is an MVP. Let's say for one station, a plant might require a different mix of scales. How can we make it easily configurable and modular such that if they buy one, they can just fix it right next to each other with a dedicated space? It needs to be easy to train on and easy to do changeovers in the future. Also, regarding the component database—currently, plants do not have a comprehensive database of all the unit weights of all their items. If there's one comprehensive database that can easily load all these unit weights and information for a setup, it will accelerate the deployment and utilization of this solution. The component weight registry sample you built helps this approach and is useful for the plant in the long run for future projects.
+
+Us: You previously mentioned our system can be used beyond just kitting operations. Beyond kitting, do you see our system being useful anywhere else in TE's operations?
+
+Daryl: Yes. We have multiple human-operated actions in the plant, and kitting is just one of them. Another big manual operation area is the assembly of parts. The logic utilized might be a little different, but there are overlaps. When they want to assemble a certain part, they take components from different boxes. For example, let's say I need to screw plates together and I need to screw five different areas. I can track that five screws were taken out, and with a weighing scale underneath, I can tell there's a weight difference. I see overlaps that can be adjusted to tackle assembly operations in TE as well. Where I see a gap in the industry is tracking the act of doing something—the process itself. Breaking it down step by step and alerting the operator before they actually make a mistake is very useful to explore.
+
+Us: Moving on to deployment readiness. Our system can run on a live line, but there's an initialization process needed: images have to be taken of the bins, annotated, and the model trained. We also need the database of component metadata uploaded, and a way to assign which component is in which bin position. Does TE have any existing systems that could support these initialization steps?
+
+Daryl: Short answer, no. I guess the closest thing would be a logic system that autonomously decides bin assignment—like prioritizing light items to the 1kg sensors. If you come up with a decent logic for assignment, the human can just do a final check and approval.
+
+Us: Our system currently gives the operator a lot of freedom to pick from any bin. The professor suggested passing this onto a process engineer to optimize the picking sequence, pushing it onto the UI for the operator to follow.
+
+Daryl: That's a good point to consider. It could help with speed, ergonomics (like left-hand vs. right-hand preferences), or organizing heavy items below lighter items. There's potential to actually reduce cycle time, not just avoid increasing it.
+
+Us: Practically speaking, how close do you think this system is to something you could pilot in a real line? What are the missing elements before deployment?
+
+Daryl: It depends on how easily users can configure the solution for themselves without needing to code. When they need to change the recipe, they must be able to change it with ease. In terms of the full application hardware and data testing, I would say it's about 80% done. The rest is just augmentations to ease human factors.
+
+Us: Any closing remarks or advice for our team as we complete this project?
+
+Daryl: I'm quite impressed with how you tested different edge cases and the questions you asked, even though you didn't have the opportunity to go on-site. You had the perspective to consider these things, which contributed to the success of the setup. If you hadn't considered them, a lot of edge cases might not have passed. You tested different lighting with a lux meter and checked stability, making the system very comprehensive. That's why I gave it a high score for deployment readiness. The best learning point moving forward would be to visit the plant to see real-life operations. That's how you truly understand the human aspect and come up with even better solutions.
+
+Us: Thank you so much. Regarding deliverables, what would you like us to send you?
+
+Daryl: For my team, a video of the whole setup is priority number one. Taking the operations from top-down, what the system sees, integrating the UI, camera, and the operator working on it—a split screen would be very useful. The code is also very important. I want to see how we can implement it in our plant and learn from your analysis. 
+
+Us: We have a second setup with the same PC. Is there anything you'd want us to try out?
+
+Daryl: Actually, maybe a counter for each part, because it's a big workload. This is something the industry has always wanted. I think your system is very close to what we need. There are solutions in the market using pure vision systems, but they struggle with configuration and high-mix, low-volume setups. Your system has a distinct advantage there.
+
+Us: Our system can fully replace the weighing scale. It uses three load cells instead of one for stability. Thank you so much for your feedback and advice!

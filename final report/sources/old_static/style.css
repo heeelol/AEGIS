@@ -1,0 +1,372 @@
+/* ============================================================
+   AEGIS — Kitting Operator Console
+   The bins are the whole story: they fill to green as items reach the box.
+   White = act here · grey = ignore · green = done · red = fault.
+   One instruction in the status bar; Complete appears when all green.
+   ============================================================ */
+
+:root {
+  --void:     #0E1413;   /* console body / "missing" fill */
+  --steel:    #161E1C;   /* panels */
+  --steel-hi: #1C2624;   /* lifted panels */
+  --rule:     #25332F;   /* seams */
+  --rule-hi:  #324440;
+
+  --white:    #F4F6F5;   /* actionable tile fill */
+  --grey:     #2A3633;   /* not-in-BOM tile fill */
+  --alert:    #FF3B30;   /* fault */
+  --alert-dim:#2A0C0A;
+  --green:    #2BD46E;   /* done */
+  --green-dim:#0E2C1B;
+  --hand:     #46E0C0;   /* "a hand is here" — informational, not a fault */
+
+  --ink:      #E8F2EF;
+  --ink-dim:  #6A827D;
+  --ink-faint:#3F544F;
+  --ink-dark: #14201E;   /* text on white tiles */
+
+  --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--sans);
+  background: radial-gradient(120% 80% at 50% -10%, #121A18 0%, var(--void) 60%);
+  color: var(--ink);
+  height: 100vh;
+  padding: 0;
+  overflow: hidden;
+  margin: 0;
+}
+
+.console {
+  width: 100vw;
+  height: 100vh;
+  background: var(--void);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hidden { display: none !important; }
+
+/* ── Header + batch progress ──────────────────────── */
+
+header {
+  padding: 16px 22px;
+  background: linear-gradient(var(--steel), var(--void));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.header-left { display: flex; align-items: baseline; gap: 14px; }
+
+h1 {
+  font-family: var(--mono);
+  font-size: 20px; font-weight: 700; letter-spacing: 2px;
+  color: var(--ink);
+}
+h1 .mark { color: var(--hand); }
+
+.subtitle {
+  font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.batch { min-width: 260px; }
+.batch-label {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.5px;
+  color: var(--ink-dim); text-align: right; margin-bottom: 6px;
+}
+.batch-track {
+  height: 6px; border-radius: 3px;
+  background: var(--steel-hi); border: 1px solid var(--rule);
+  overflow: hidden;
+}
+.batch-fill {
+  height: 100%; width: 0%;
+  background: var(--ink-faint);
+  transition: width 0.4s ease;
+}
+
+/* ── Workspace: bins (full width) ─────────────────── */
+
+.workspace {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column;
+  padding: 16px 22px;
+  overflow: hidden;
+}
+
+h2 {
+  flex: 0 0 auto;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 3px; color: var(--ink-faint); margin-bottom: 12px;
+}
+
+.bins-zone { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+#bins { flex: 1 1 auto; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+
+.bin-layer { flex: 1 1 0; display: flex; align-items: stretch; gap: 14px; min-height: 0; }
+
+.layer-label {
+  flex: 0 0 40px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  color: var(--ink-dim);
+  background: var(--void); border: 1px solid var(--rule); border-radius: 9px;
+}
+
+.layer-grid { display: grid; gap: 12px; flex: 1 1 auto; height: 100%; }
+
+/* ── Bin tile ─────────────────────────────────────── */
+
+.bin {
+  position: relative;
+  min-height: 104px;
+  height: 100%;
+  background: var(--steel);
+  border: 1px solid var(--rule-hi);
+  border-radius: 10px;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  overflow: hidden;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.bin-id {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 1px;
+  color: var(--ink-dim);
+}
+
+.quantity {
+  font-family: var(--mono); font-size: 32px; font-weight: 700; line-height: 1;
+  margin-top: 6px; color: var(--ink);
+}
+
+.bin-missing {
+  font-family: var(--mono); font-size: 13px; letter-spacing: 1.5px;
+  color: var(--ink-dim);
+}
+
+/* States ---------------------------------------------------- */
+
+/* incomplete / working: the only bright tiles — "act here". */
+.bin.incomplete { background: var(--white); border-color: #D5DCDA; }
+.bin.incomplete .bin-id  { color: #586C67; }
+.bin.incomplete .quantity { color: var(--ink-dark); }
+
+/* not-in-BOM: grey, recede. */
+.bin.not_in_bom { background: var(--grey); border-color: var(--rule-hi); }
+.bin.not_in_bom .bin-id { color: var(--ink-dim); }
+
+/* complete / done: green — box has its items AND extras returned. */
+.bin.complete {
+  background: linear-gradient(var(--green-dim), rgba(43, 212, 110, 0.20));
+  border-color: var(--green);
+}
+.bin.complete .bin-id  { color: rgba(43, 212, 110, 0.75); }
+.bin.complete .quantity { color: var(--green); }
+
+/* missing: same as the background, grey outline. */
+.bin.missing {
+  background: var(--void);
+  border: 1px solid var(--rule-hi);
+}
+
+/* ── Hand-in-bin indicator (informational) ────────── */
+
+.hand-flag {
+  position: absolute; top: 7px; right: 7px;
+  display: flex; align-items: center; gap: 3px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 6px; border-radius: 5px;
+  background: rgba(70, 224, 192, 0.14);
+  color: var(--hand);
+  border: 1px solid var(--hand);
+}
+.bin.incomplete .hand-flag { background: rgba(20, 32, 30, 0.10); }
+
+/* ── Wrong-bin cross overlay ──────────────────────── */
+
+.bin.wrong { border-color: var(--alert); }
+.cross { position: absolute; inset: 0; pointer-events: none; }
+.cross::before, .cross::after {
+  content: ""; position: absolute;
+  top: 50%; left: 50%;
+  width: 132%; height: 4px;
+  background: var(--alert);
+  box-shadow: 0 0 10px rgba(255, 59, 48, 0.7);
+  transform-origin: center;
+}
+.cross::before { transform: translate(-50%, -50%) rotate(45deg); }
+.cross::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+
+/* ── Per-bin controls: grab / place / return ──────── */
+
+.bin-ctl {
+  position: absolute; bottom: 6px; left: 6px; right: 6px;
+  display: flex; justify-content: space-between; gap: 4px;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.bin:hover .bin-ctl,
+.bin:focus-within .bin-ctl { opacity: 1; }
+
+.ctl-btn {
+  flex: 1; font-family: var(--mono);
+  border: 1px solid var(--rule-hi);
+  background: rgba(0,0,0,0.5); color: var(--ink);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  line-height: 1; padding: 4px 0; border-radius: 5px; cursor: pointer; user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ctl-btn:hover { background: rgba(0,0,0,0.78); border-color: var(--hand); }
+.ctl-btn:active { transform: scale(0.95); }
+.ctl-btn:focus-visible { outline: 2px solid var(--hand); outline-offset: 1px; }
+.bin.incomplete .ctl-btn { color: var(--ink-dark); background: rgba(20,32,30,0.10); border-color: rgba(20,32,30,0.18); }
+.bin.incomplete .ctl-btn:hover { background: rgba(20,32,30,0.22); }
+.bin.complete .ctl-btn { color: var(--ink); background: rgba(11,15,14,0.30); border-color: rgba(43,212,110,0.4); }
+
+/* ── Status bar + Complete button ─────────────────── */
+
+.statusbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--rule);
+  background: var(--steel);
+  font-family: var(--mono); font-size: 15px; letter-spacing: 0.5px;
+  color: var(--ink);
+}
+.status-dot {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--ink-faint); flex: 0 0 auto;
+}
+#status-msg { flex: 1; }
+.statusbar.ready  .status-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.statusbar.action .status-dot { background: var(--alert); box-shadow: 0 0 8px var(--alert); }
+.statusbar.action #status-msg { color: var(--alert); }
+.statusbar.ready  #status-msg { color: var(--green); }
+
+.complete-btn {
+  flex: 0 0 auto;
+  min-height: 44px; padding: 0 22px;
+  font-family: var(--sans); font-size: 13px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  border-radius: 9px; cursor: pointer;
+  background: var(--green); color: var(--void); border: 1px solid var(--green);
+  animation: popIn 0.18s ease-out;
+}
+.complete-btn:hover { filter: brightness(1.08); }
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Mock controls ────────────────────────────────── */
+
+.mock-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 22px; border-top: 1px dashed var(--rule-hi);
+  background: rgba(0,0,0,0.25);
+}
+.mock-tag {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 2px; color: var(--ink-faint);
+  border: 1px solid var(--rule-hi); padding: 2px 7px; border-radius: 4px;
+}
+.mock-sep {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--ink-faint); margin-left: 6px;
+}
+.mock-btn {
+  font-family: var(--mono); font-size: 12px;
+  background: var(--steel-hi); color: var(--ink-dim);
+  border: 1px solid var(--rule-hi); border-radius: 6px;
+  padding: 5px 12px; cursor: pointer;
+}
+.mock-btn:hover { border-color: var(--hand); color: var(--ink); }
+
+/* ── Confirmation modal ───────────────────────────── */
+
+.modal {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.62);
+}
+.modal-card {
+  background: var(--steel-hi);
+  border: 1px solid var(--rule-hi);
+  border-radius: 14px;
+  padding: 28px;
+  width: 90%; max-width: 420px;
+  box-shadow: 0 28px 70px -22px #000;
+}
+.modal-title {
+  font-family: var(--sans); font-size: 20px; font-weight: 700;
+  color: var(--ink); margin-bottom: 10px;
+}
+.modal-body {
+  font-size: 14px; color: var(--ink-dim); line-height: 1.5; margin-bottom: 24px;
+}
+.modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
+.modal-btn {
+  min-height: 44px; padding: 0 22px; border-radius: 9px;
+  font-family: var(--sans); font-size: 13px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+  border: 1px solid var(--rule-hi);
+}
+.modal-btn.cancel { background: transparent; color: var(--ink-dim); }
+.modal-btn.cancel:hover { color: var(--ink); border-color: var(--ink-dim); }
+.modal-btn.proceed { background: var(--green); color: var(--void); border-color: var(--green); }
+.modal-btn.proceed:hover { filter: brightness(1.08); }
+
+/* ── Corrective Banner (Top) ───────────────── */
+
+.alert-overlay {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(180, 20, 14, 0.92);
+  animation: alertPulse 1.1s ease-in-out infinite;
+  padding: 16px 24px;
+}
+.alert-inner { text-align: left; width: 100%; display: flex; flex-direction: column; gap: 4px; }
+.alert-kicker {
+  font-family: var(--mono); font-size: 12px; font-weight: 700;
+  letter-spacing: 3px; color: rgba(255,255,255,0.75);
+}
+.alert-msg {
+  font-family: var(--mono); font-size: 20px; font-weight: 700;
+  letter-spacing: 1px; color: #fff; line-height: 1.2;
+}
+.alert-hint {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 1px;
+  color: rgba(255,255,255,0.7);
+}
+@keyframes alertPulse {
+  0%, 100% { background: rgba(176, 18, 12, 0.92); }
+  50%      { background: rgba(214, 30, 22, 0.96); }
+}
+
+/* ── Responsive + reduced motion ──────────────────── */
+
+@media (max-width: 720px) {
+  body { padding: 8px; }
+  header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .batch { width: 100%; }
+  .batch-label { text-align: left; }
+  .statusbar { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

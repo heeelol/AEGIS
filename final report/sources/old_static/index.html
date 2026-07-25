@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AEGIS — Kitting Operator</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <div class="console">
+
+    <!-- Header + batch progress -->
+    <header>
+      <div class="header-left">
+        <h1>AEGIS<span class="mark">//</span>KIT</h1>
+        <span class="subtitle">Operator · Kitting</span>
+      </div>
+      <div class="batch">
+        <div class="batch-label">Kit <span id="batch-done">—</span> / <span id="batch-target">—</span></div>
+        <div class="batch-track"><div id="batch-fill" class="batch-fill"></div></div>
+      </div>
+    </header>
+
+    <!-- Bins (the whole story) -->
+    <div class="workspace">
+      <section class="bins-zone">
+        <h2>Bins</h2>
+        <div id="bins"></div>
+      </section>
+    </div>
+
+    <!-- Status bar: one instruction + the Complete button (appears when ready) -->
+    <div id="statusbar" class="statusbar">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-msg">Checking bins…</span>
+      <button id="complete-btn" class="complete-btn hidden">Complete kit</button>
+    </div>
+
+    <!-- Mock-only controls (revealed only when the backend reports mock mode) -->
+    <div id="mock-controls" class="mock-controls hidden">
+      <span class="mock-tag">MOCK</span>
+      <button class="mock-btn" data-hand="bin_1_1">Hand → wrong bin (B2)</button>
+      <span class="mock-sep">red screen:</span>
+      <button class="mock-btn" data-scenario="pick_wrong">Pick from wrong bin</button>
+      <button class="mock-btn" data-scenario="return_wrong">Return to wrong bin</button>
+      <button class="mock-btn" data-scenario="remove_kit">Remove from kit</button>
+      <button class="mock-btn" data-scenario="overpack_kit">Overpack kit</button>
+      <button class="mock-btn" data-clear="1">Clear</button>
+    </div>
+
+  </div>
+
+  <!-- Complete-kit confirmation -->
+  <div id="confirm-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">Complete this kit?</div>
+      <div class="modal-body">Every bin is verified. Closing the kit logs it and advances the batch to the next one.</div>
+      <div class="modal-actions">
+        <button id="confirm-cancel" class="modal-btn cancel">Cancel</button>
+        <button id="confirm-proceed" class="modal-btn proceed">Proceed</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full-screen corrective overlay -->
+  <div id="alert-overlay" class="alert-overlay hidden">
+    <div class="alert-inner">
+      <div class="alert-kicker">CORRECTIVE ACTION REQUIRED</div>
+      <div id="alert-msg" class="alert-msg"></div>
+      <div id="alert-hint" class="alert-hint hidden">Correct the fault to clear — or press Esc (mock only)</div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
