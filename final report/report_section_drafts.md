@@ -292,10 +292,11 @@ The FSM continuously evaluates four discrete fault states:
 CHAPTER 3: PROTOTYPE DEVELOPMENT
 ================================================================================
 
-Flowing directly from the System Architecture defined in Chapter 2, Chapter 3 details the physical construction, sensor integration, and software implementation of the AEGIS prototype. The prototype was developed using a structured methodology designed to imitate the working environment of TE Connectivity's manual kitting workstations based on plant specifications and stakeholder requirements.
+Flowing directly from the System Architecture defined in Chapter 2, Chapter 3 details the physical construction, sensor integration, and software implementation of the AEGIS prototype. The prototype was developed using a structured methodology designed to emulate the working environment of TE Connectivity's manual kitting workstations based on plant specifications and stakeholder requirements.
 
 3.1 Physical Frame
-The physical frame was constructed to emulate the dimensions and ergonomics of TE Connectivity's production kitting stations without requiring modification to existing plant benches (FR-09). Based on plant requirement specifications and following stakeholder feedback, the frame was constructed from aluminum extrusions and fitted with matte electrostatic-discharge (ESD) mats to prevent specular reflections from overhead lighting.
+3.1.1 Mechanical Component Selection & Workstation Emulation
+The physical frame was constructed to emulate the exact dimensions, bin access geometry, and operator ergonomics of TE Connectivity's production kitting stations without requiring modification to existing plant benches (FR-09). Based on plant requirement specifications and following stakeholder feedback, the frame was constructed from industrial aluminum extrusions and fitted with matte electrostatic-discharge (ESD) mats to prevent specular reflections from overhead lighting.
 
 The workstation features a two-tier nine-bin grid:
 - Lower Tier: 3 large-capacity bins mounted on 3-point load cell platforms.
@@ -303,17 +304,29 @@ The workstation features a two-tier nine-bin grid:
 - Consolidation Area: A dedicated kit-box load cell receptor positioned centrally for operator placement.
 - Overhead Rig: Rigid camera mount positioning the 1080p camera 1.2 m directly above the working plane, ensuring complete FOV coverage of all 9 bins and the kit box.
 
+3.1.2 Workstation Assembly & Surface Treatment
+All workstation surfaces were lined with matte electrostatic-discharge (ESD) protective matting to eliminate specular reflection under direct 500 lux overhead factory lighting, providing high-contrast visual backdrops for the vision system.
+
+Figure 3.1: AEGIS Physical Workstation Frame Setup showing overhead camera rig, two-tier 9-bin grid, and central kit box consolidation receptor.
+
+
 3.2 Sensors Subsystem
 
-3.2.1 Computer Vision
-The computer vision subsystem executes two real-time models in parallel on the Jetson AGX Orin:
-1. YOLOv8-OBB Bin Boundary Detector: Trained on rim-centric images across empty, partial, and fully filled bins. Generates tight polygon geofences around bin rims regardless of item contents or protrusion.
-2. MediaPipe Hand Landmark Tracker: Ingests camera frames at 30 fps, tracking 21 3D landmark coordinates per hand. Converts fingertip/knuckle coordinates into geometric bin assignment signals.
+3.2.1 Computer Vision Models & Architecture
+The computer vision subsystem executes two real-time models in parallel on the Advantech MIC-733 (Jetson AGX Orin) edge computing node:
+1. YOLOv8-OBB Bin Boundary Detector: Trained on rim-centric images across empty, partial, and fully filled bins. Generates tight, oriented polygon geofences around bin rims regardless of item contents or protrusion.
+2. MediaPipe Hand Landmark Tracker: Ingests 1080p camera frames at 30 fps, tracking 21 3D landmark coordinates per hand. Converts fingertip and knuckle coordinates into geometric bin assignment signals.
 
-3.2.2 Load Cells
-Rather than evaluating arbitrary prototype stages, load cell platform development directly addressed the mechanical stability and metrology requirements established in Chapter 2.
-- Small Bin Platform: Single 1 kg cantilever load cell with circular acrylic mounting plate (100 mm radius). Suitable for light parts (<1 kg).
-- Medium/Large Bin Platforms: Three-point summed load cell triangle (utilizing 5 kg and 10 kg sensors). Arranging three sensors in an equilateral triangle ensures the bin's centre of gravity stays within the support triangle, preventing tipping and ensuring statically determined contact on uneven benches. Summed signals route through single-channel HX711 ADCs to an ESP32 microcontroller.
+Figure 3.2: Computer Vision Pipeline showing YOLOv8-OBB polygon bin geofences and MediaPipe 21-point 3D hand tracking over the 9-bin workstation grid.
+
+3.2.2 Load Cells & Sensor Hub Integration
+Rather than evaluating arbitrary prototype stages, load cell platform development directly addressed the mechanical stability and metrology requirements established in Chapter 2:
+- Small Bin Platform: Single 1 kg cantilever load cell with circular acrylic mounting plate (100 mm radius), suitable for light parts (<1 kg).
+- Medium/Large Bin Platforms: Three-point summed load cell triangle configuration utilizing 5 kg and 10 kg sensors. Arranging three sensors in an equilateral triangle ensures the bin's centre of gravity stays within the support triangle, preventing tipping and ensuring statically determined contact on uneven benches.
+- Signal Processing Hub: Summed Wheatstone bridge signals route through single-channel HX711 24-bit ADCs to an ESP32 microcontroller, which streams calibrated weight data arrays via USB serial.
+
+Figure 3.3: Load Cell Platform Hardware Architectures showing (a) Single-Cell Cantilever Rest and (b) Three-Point Summed Load Cell Triangle Configuration.
+
 
 3.3 Software Subsystem
 
@@ -336,14 +349,20 @@ Serial Communication    PySerial                                Reads JSON weigh
 Microcontroller Firmware C++ (Arduino IDE) on ESP32             Reads HX711 load cell ADCs and streams JSON weight arrays.
 ------------------------------------------------------------------------------------------------------------------------
 
+Figure 3.4: AEGIS System Electrical Architecture Diagram showing interconnectivity between Camera, Jetson AGX Orin, ESP32, Load Cells, and HMI Display.
+
 3.3.2 Frontend HMI
 The operator HMI is served locally via FastAPI as a full-screen browser kiosk. Key features include:
-- Glanceable Bin Grid: Mirrors physical 9-bin layout.
+- Glanceable Bin Grid: Direct 1-to-1 visual mirror of the physical 9-bin layout with real-time status color coding.
 - Animated Hand Halos: Teal halo for valid bin reaches; pulsating RED halo for invalid reaches.
 - Full-Width Fault Banner: Prominent top banner displaying single-word error keywords with explicit corrective subtitles.
 
-3.3.3 Backend Processing Engine
-The backend decouples sensing from rendering via a thread-safe `PipelineState` shared memory cache. Verification logic is encapsulated in `placement.py`, implementing the FSM independently of peripherals to enable automated testing.
+Figure 3.5: AEGIS Operator Frontend Interface showing real-time bin grid status, hand halo tracking, and fault banner guidance.
+
+3.3.3 Backend Processing Engine & FSM Logic
+The backend decouples sensing from rendering via a thread-safe `PipelineState` shared memory cache. Verification logic is encapsulated in `placement.py`, implementing the Sequential Single-Bin Verification Finite State Machine (FSM) independently of peripherals to enable automated testing.
+
+Figure 3.6: System Flowchart illustrating concurrent thread processing (CV, Load Cell, HMI) and FSM verification decision loops.
 
 
 ================================================================================
