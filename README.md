@@ -28,7 +28,7 @@ Running all processing locally, rather than in the cloud, was a requirement from
 
 ## Demonstration
 
-A stitched video recording of the system in operation, combining the camera's point of view, the operator dashboard, and a third-person view of an operator performing a kitting task, can be viewed on YouTube: *(link to be added)*.
+A stitched video recording of the system in operation, combining the camera's point of view, the operator dashboard, and a third-person view of an operator performing a kitting task, can be viewed on YouTube: <https://youtu.be/AxHCu2dXehM>.
 
 ## Results
 

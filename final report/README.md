@@ -5,7 +5,7 @@ This folder holds the final deliverables submitted for the CDE3301/IS305 capston
 ## Submission
 
 - **`IS305 - Final Report - Submitted.pdf`**: the final version of the report as submitted for assessment.
-- **Demonstration video**: a recorded demonstration of AEGIS in operation, combining the camera's point of view, the operator dashboard, and a third-person view of an operator performing a kitting task. Hosted on YouTube: *(link to be added)*.
+- **Demonstration video**: a recorded demonstration of AEGIS in operation, combining the camera's point of view, the operator dashboard, and a third-person view of an operator performing a kitting task. Hosted on YouTube: <https://youtu.be/AxHCu2dXehM>.
 - **`media/Workstation Setup.jpg`**: a photograph of the complete physical workstation.
 
 ## Supporting Material
