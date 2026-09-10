@@ -3,6 +3,7 @@
 AEGIS is a computer vision and sensor-assisted system designed to reduce errors in manual kitting, the process by which a worker selects and packs a specified set of components into a single kit. The project was developed as the final year capstone for the CDE3301/IS305 module at the National University of Singapore (AY2025/26), in partnership with TE Connectivity and with hardware sponsorship from Advantech.
 
 ![AEGIS workstation setup](<final%20report/media/Workstation%20Setup.jpg>)
+
 *The complete AEGIS workstation: overhead camera mount, load-cell bin platforms, operator dashboard, and the AI PC that runs the detection pipeline.*
 
 ## The Problem
@@ -27,7 +28,7 @@ Running all processing locally, rather than in the cloud, was a requirement from
 
 ## Demonstration
 
-A stitched video recording of the system in operation, combining the camera's point of view, the operator dashboard, and a third-person view of an operator performing a kitting task, is available at [`final report/media/AEGIS Demo - Stitched.mp4`](<final%20report/media/AEGIS%20Demo%20-%20Stitched.mp4>).
+A stitched video recording of the system in operation, combining the camera's point of view, the operator dashboard, and a third-person view of an operator performing a kitting task, can be viewed on YouTube: *(link to be added)*.
 
 ## Results
 
