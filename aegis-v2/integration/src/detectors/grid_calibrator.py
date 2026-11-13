@@ -132,17 +132,19 @@ def match_to_grid(detections: list, calibration: dict) -> dict:
     if not detections:
         return result
 
-    # Calibrated row mean-y, to assign each detection a row.
-    row_cys: dict = {0: [], 1: []}
+    # Calibrated row mean-y, to assign each detection to its nearest row. Built
+    # from the rows actually present in the calibration (1, 2, or more), so a
+    # single-row layout (e.g. [6]) doesn't divide by an empty row.
+    row_cys: dict = {}
     for info in calibration.values():
-        row_cys[info["row"]].append(info["center"][1])
+        row_cys.setdefault(info["row"], []).append(info["center"][1])
     row_mean = {r: sum(v) / len(v) for r, v in row_cys.items()}
 
     # Same-row (distance, det_idx, slot_id) pairs within the match cutoff (0.5 * row spacing).
     pairs = []
     for di, d in enumerate(detections):
         cx, cy = _cx(d), _cy(d)
-        row = 0 if abs(cy - row_mean[0]) <= abs(cy - row_mean[1]) else 1
+        row = min(row_mean, key=lambda r: abs(cy - row_mean[r]))
         for sid, info in calibration.items():
             if info["row"] != row:
                 continue

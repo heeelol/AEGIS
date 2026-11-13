@@ -114,6 +114,17 @@ def test_match_all_present():
     assert "corners" in occ["slot_1"]
 
 
+def test_match_single_row_layout():
+    # [6] layout: match must not divide by an empty second row (regression).
+    cal = gc.calibrate_grid(top_dets(), layout=[6])
+    occ = gc.match_to_grid(top_dets(), cal)
+    assert present_indices(occ) == set(range(1, 7))
+    assert occ["slot_1"]["present"] is True
+    # a missing bin is still tolerated, not a crash
+    occ2 = gc.match_to_grid(top_dets()[:4], cal)
+    assert occ2["slot_5"]["present"] is False and occ2["slot_1"]["present"] is True
+
+
 def test_match_missing_middle_top_bin():
     cal = gc.calibrate_grid(full())
     dets = [d for c, d in enumerate(top_dets()) if c != 2] + bottom_dets()  # drop top index 3
