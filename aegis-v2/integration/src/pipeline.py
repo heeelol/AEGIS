@@ -336,10 +336,14 @@ class Pipeline:
         # OBB two-snapshot flow — bins are locked interactively, not at INIT.
         self._load_obb_model()
         from integration.src.detectors.grid_session import GridSession
-        self._grid_session = GridSession()
+        # Per-row bin counts for the grid. Default [6, 3]; set e.g. [6] in
+        # settings.yaml (bin_detector.grid_layout) for a single top row of 6.
+        self._grid_layout = det_cfg.get("grid_layout") or [6, 3]
+        self._grid_session = GridSession(self._grid_layout)
         self._geofences = {}
-        logger.info("OBB two-snapshot flow ready — press '1' to calibrate the "
-                    "workstation grid, '2' to initialise the kit")
+        logger.info("OBB two-snapshot flow ready (grid layout=%s) — press '1' to "
+                    "calibrate the workstation grid, '2' to initialise the kit",
+                    self._grid_layout)
 
     def _load_obb_model(self) -> None:
         """Load the bin detection model once at startup (fails soft to ``None``).
@@ -789,19 +793,20 @@ class Pipeline:
     # ── Two-snapshot operator flow (OBB) ─────────────────────
 
     def _calibrate_grid(self, frame) -> None:
-        """Key '1': snapshot → OBB detect (9 bins) → lock the 6+3 grid."""
+        """Key '1': snapshot → OBB detect → lock the grid (layout from config)."""
         if self._grid_session is None:
             logger.info("Calibration is only available in the OBB flow "
                         "(manual_layout is set)")
             return
-        dets = self._obb.detect_bins(frame, self._obb_model, expected_count=9)
+        expected = sum(getattr(self, "_grid_layout", [6, 3]))
+        dets = self._obb.detect_bins(frame, self._obb_model, expected_count=expected)
         try:
             self._grid_session.calibrate(dets)
         except ValueError as e:
             logger.warning("Grid calibration failed: %s", e)
             self._save_calib_debug(frame, dets)
             return
-        logger.info("Workstation grid calibrated — 9 slots locked")
+        logger.info("Workstation grid calibrated — %d slot(s) locked", expected)
         self._apply_bins(self._grid_session.to_geofences())
 
     def _save_calib_debug(self, frame, dets) -> None:

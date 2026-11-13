@@ -38,41 +38,49 @@ def _median(values: list) -> float:
     return float(s[mid]) if n % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
-def calibrate_grid(detections: list) -> dict:
-    """All-9-bins snapshot -> the 9 fixed slots (the grid).
+def calibrate_grid(detections: list, layout: list[int] | None = None) -> dict:
+    """Full-grid snapshot -> the fixed slots (the grid).
 
-    Splits into 2 rows by y-gap, validates exactly 6 top + 3 bottom, orders each
-    row left->right, and assigns indices 1..6 (top) / 7..9 (bottom). Stores each
-    slot's centre, box, and the row's median centre-to-centre spacing (used as the
-    match cutoff later). Raises ValueError if the snapshot isn't a clean 6+3.
+    ``layout`` is the per-row bin count (default ``[6, 3]`` = 6 top + 3 bottom;
+    ``[6]`` = a single top row of 6). Splits into ``len(layout)`` rows by y-gap,
+    validates each row's bin count, orders each row left->right, and assigns
+    indices 1..N (top row first). Every row renders against a ``max(layout)``-slot
+    track, so a row with fewer bins spans wider (the 3 bottom bins span 2 slots
+    each). Stores each slot's centre, box, and the row's median centre-to-centre
+    spacing (the match cutoff). Raises ValueError if the snapshot doesn't match.
     """
+    layout = list(layout) if layout else [6, 3]
+    num_rows = len(layout)
+    track = max(layout) if layout else 1
+
     if not all(math.isfinite(_cx(d)) and math.isfinite(_cy(d)) for d in detections):
         raise ValueError(
             "Calibration snapshot contains non-finite detection centres; "
             "retake the snapshot."
         )
-    rows = ga.split_rows_by_y(detections, num_rows=2)
-    top, bottom = rows[0], rows[1]
-    if len(top) != 6 or len(bottom) != 3:
+    rows = ga.split_rows_by_y(detections, num_rows=num_rows)
+    got = [len(r) for r in rows]
+    if got != layout:
+        want = " + ".join(str(n) for n in layout)
         raise ValueError(
-            f"Calibration needs 6 top + 3 bottom bins; got {len(top)} top / "
-            f"{len(bottom)} bottom. Retake the calibration snapshot with all 9 bins."
+            f"Calibration needs rows of {want} bins (total {sum(layout)}); got "
+            f"{' / '.join(str(n) for n in got)}. Retake the snapshot with all "
+            f"{sum(layout)} bins clearly separated into {num_rows} row(s)."
         )
 
     slots: dict = {}
     index = 1
-    for row_idx, layer, span, row_dets in (
-        (0, "top", 1, top),
-        (1, "bottom", 2, bottom),
-    ):
+    for row_idx, (count, row_dets) in enumerate(zip(layout, rows)):
+        layer = ga._layer_name(row_idx, num_rows)
+        span = track // count if count and track % count == 0 else 1
         ordered = sorted(row_dets, key=_cx)
         centers = [_cx(d) for d in ordered]
         diffs = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
-        row_spacing = _median(diffs)
-        if row_spacing <= 0:
+        row_spacing = _median(diffs) if diffs else 0.0
+        if count >= 2 and row_spacing <= 0:
             raise ValueError(
                 f"Degenerate {layer}-row spacing ({row_spacing}); bins overlap in x. "
-                f"Retake the calibration snapshot with all 9 bins clearly separated."
+                f"Retake the calibration snapshot with all bins clearly separated."
             )
         for d in ordered:
             slots[f"slot_{index}"] = {
@@ -85,8 +93,8 @@ def calibrate_grid(detections: list) -> dict:
                 "row_spacing": row_spacing,
             }
             index += 1
-    logger.info("Calibrated 9 slots (top spacing=%.1f, bottom spacing=%.1f)",
-                slots["slot_1"]["row_spacing"], slots["slot_7"]["row_spacing"])
+    logger.info("Calibrated %d slot(s) across %d row(s) (layout=%s)",
+                len(slots), num_rows, layout)
     return slots
 
 

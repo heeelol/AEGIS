@@ -33,16 +33,29 @@ import grid_calibrator as gc  # noqa: E402
 
 logger = logging.getLogger("aegis.detectors.grid_session")
 
-ROW_SLOTS = 6  # both rows are laid out against a 6-slot track
+DEFAULT_LAYOUT = [6, 3]  # per-row bin counts; the classic 6-top + 3-bottom grid
 
 
-def _slot_layout(index: int) -> tuple[int, int, int, int]:
-    """Map a grid slot index (1..9) to (row, col, span, slot_start)."""
-    if index <= 6:
-        col = index - 1
-        return 0, col, 1, col           # top: one slot each, slots 0..5
-    col = index - 7
-    return 1, col, 2, col * 2           # bottom: two slots each, starts 0,2,4
+def _row_slots(layout: list[int]) -> int:
+    """Width of the slot track every row renders against (the widest row)."""
+    return max(layout) if layout else 1
+
+
+def _slot_layout(index: int, layout: list[int]) -> tuple[int, int, int, int]:
+    """Map a grid slot index (1..N) to (row, col, span, slot_start) for ``layout``
+    (per-row bin counts). Every row renders against a ``max(layout)``-slot track,
+    so a row with fewer bins spans wider and the rows stay aligned
+    (e.g. ``[6, 3]`` -> top span 1, bottom span 2; ``[6]`` -> a single span-1 row)."""
+    track = _row_slots(layout)
+    start = 1
+    for row, count in enumerate(layout):
+        if index < start + count:
+            col = index - start
+            span = track // count if count and track % count == 0 else 1
+            return row, col, span, col * span
+        start += count
+    # index out of range -> best-effort single-row placement
+    return 0, index - 1, 1, index - 1
 
 
 def _bbox_and_polygon(corners) -> tuple[int, int, int, int, list]:
@@ -57,7 +70,10 @@ def _bbox_and_polygon(corners) -> tuple[int, int, int, int, list]:
 class GridSession:
     """Holds the calibrated grid and the current kit occupancy."""
 
-    def __init__(self):
+    def __init__(self, layout: list[int] | None = None):
+        # Per-row bin counts, e.g. [6, 3] (default) or [6] for a single top row.
+        self._layout = list(layout) if layout else list(DEFAULT_LAYOUT)
+        self._row_slots = _row_slots(self._layout)
         self._calibration: dict | None = None   # slots dict from calibrate_grid
         self._occupancy: dict | None = None      # per-slot result from match_to_grid
 
@@ -76,12 +92,13 @@ class GridSession:
 
     # ── Snapshot 1: workstation grid ─────────────────────────
     def calibrate(self, detections: list) -> dict:
-        """Lock the 9 fixed slots from an all-9-bins snapshot.
+        """Lock the fixed slots from a full-grid snapshot.
 
-        Wraps ``calibrate_grid`` (raises ``ValueError`` if the snapshot isn't a
-        clean 6 top + 3 bottom). Recalibrating clears any prior kit.
+        Wraps ``calibrate_grid`` (raises ``ValueError`` if the snapshot doesn't
+        match this session's ``layout``, e.g. 6 top + 3 bottom by default).
+        Recalibrating clears any prior kit.
         """
-        self._calibration = gc.calibrate_grid(detections)
+        self._calibration = gc.calibrate_grid(detections, self._layout)
         self._occupancy = None
         return self._calibration
 
@@ -144,7 +161,7 @@ class GridSession:
                 corners = info["corners"]
                 confidence = 1.0 if self._occupancy is None else 0.0
 
-            row, col, span, slot_start = _slot_layout(info["index"])
+            row, col, span, slot_start = _slot_layout(info["index"], self._layout)
             x_min, x_max, y_min, y_max, polygon = _bbox_and_polygon(corners)
             geofences[f"bin_{row}_{col}"] = {
                 "x_min": x_min,
@@ -154,7 +171,7 @@ class GridSession:
                 "confidence": confidence,
                 "span": span,
                 "slot_start": slot_start,
-                "row_slots": ROW_SLOTS,
+                "row_slots": self._row_slots,
                 "detected": present,
                 "polygon": polygon,
             }

@@ -55,6 +55,25 @@ def test_calibrate_builds_9_indexed_slots():
     assert cal["slot_1"]["row_spacing"] > 0 and cal["slot_7"]["row_spacing"] > 0
 
 
+def test_calibrate_single_row_layout():
+    # layout=[6] -> one top row of 6, span 1, no bottom row.
+    cal = gc.calibrate_grid(top_dets(), layout=[6])
+    assert len(cal) == 6
+    assert cal["slot_1"]["index"] == 1 and cal["slot_1"]["row"] == 0
+    assert cal["slot_1"]["span"] == 1 and cal["slot_6"]["row"] == 0
+    assert all(s["row"] == 0 for s in cal.values())
+    assert cal["slot_1"]["row_spacing"] > 0
+
+
+def test_layout_mismatch_rejected_both_ways():
+    # a full 9-bin snapshot against a [6] layout -> 2 bands != 1 row -> reject
+    with pytest.raises(ValueError):
+        gc.calibrate_grid(full(), layout=[6])
+    # a 6-bin (single row) snapshot against the default [6, 3] -> no bottom -> reject
+    with pytest.raises(ValueError):
+        gc.calibrate_grid(top_dets())
+
+
 def test_calibrate_orders_left_to_right():
     cal = gc.calibrate_grid(list(reversed(top_dets())) + bottom_dets())
     xs = [cal[f"slot_{i}"]["center"][0] for i in range(1, 7)]
